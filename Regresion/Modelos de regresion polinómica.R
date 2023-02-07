@@ -1,9 +1,9 @@
-#Regresi髇 polin髆ica
+#Regresi贸n polin贸mica
 p <- 0.5 #precio
 q <- seq(1:20) #cantidad
 q <- seq(from=0, to=20, by=0.1)
 y <- p*q #pago
-plot(q,y,type='l',col='red',main='Relaci髇 lineal',xlab="cantidad(q)",ylab="pago(y)")
+plot(q,y,type='l',col='red',main='Relaci贸n lineal',xlab="cantidad(q)",ylab="pago(y)")
 
 #Creamos el pago como un polinomio no lineal
 y <- 500 + 0.4 * (q-10)^3
@@ -14,12 +14,12 @@ set.seed(20)
 q <- seq(from=0, to=20, by=0.1)
 y <- 500 + 0.4 * (q-10)^3
 
-#A馻dimos ruido
-noise <- rnorm(length(q), mean=10, sd=80) #Ruido aleatorio con distribuci髇 normal
+#A帽adimos ruido
+noise <- rnorm(length(q), mean=10, sd=80) #Ruido aleatorio con distribuci贸n normal
 noisy.y <- y + noise
 plot(q,noisy.y,type='l',col='blue',main='Relacion no lineal',lwd=2)
 
-#Gr醘ico de ruido con la funci髇
+#Gr谩fico de ruido con la funci贸n
 plot(q,noisy.y,col='black',xlab='q',main='Datos observados')
 lines(q,y,col='firebrick1',lwd=2)
 
