@@ -1,5 +1,5 @@
 
-#Medias Móviles
+#Medias MÃ³viles
 
 library(readxl)
 library(zoo)
@@ -11,7 +11,7 @@ library(TSA)
 
 #Datos
 
-ST <-read_excel("C:/Users/98pjo/OneDrive/Escritorio/Universidad/R/Descomposición de Series Temporales/train.xlsx")
+ST <-read_excel("C:/Users/98pjo/OneDrive/Escritorio/Universidad/R/DescomposiciÃ³n de Series Temporales/train.xlsx")
 
 #Transformamos en fecha(Date)
 ST <- ST %>% 
@@ -23,7 +23,7 @@ attach(ST)
 
 summary(ST)
 
-#Sucede que hay varios datos por día
+#Sucede que hay varios datos por dÃ­a
 #Agrupamos por dia
 
 DaySales <- ST %>% 
