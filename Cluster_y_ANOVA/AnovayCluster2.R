@@ -8,7 +8,7 @@ datospaises[1:27,1] #nombres paises
 
 #Analisis preliminar (summary, matriz correlaciones y busqueda de outliers)
 library(corrplot) #Para obtencion de matriz/grafico de correlaciones
-datos[which.max(datos$PIBpc),1] #Mayor PIBpc, ejemplo de búsqueda del mayor valor
+datos[which.max(datos$PIBpc),1] #Mayor PIBpc, ejemplo de bÃºsqueda del mayor valor
 datos[which.max(datos$PIBpc),] #Fila con mayor valor de PIBpc
 summary(datos) #resumen estadistico
 str(datos) #estructura de la tabla de datos
@@ -17,21 +17,21 @@ cov #matriz de varianzas covarianzas
 correlaciones<-cor(datos)
 correlaciones #matriz de correlaciones
 head(datospaises) #Muestra solo las primeras observaciones
-corrplot.mixed(correlaciones, upper="ellipse") #El elipse permite ver el signo de la relación
-corrplot.mixed(correlaciones, upper="circle") #podemps dar forma de circulo, o también cuadrado con square
-plot(datos$ID_PIB,datos$PIBpc,col="red",xlab="ID/PIB",ylab="PIBpc",main="Grafico dispersión") #grafico de dispersion
+corrplot.mixed(correlaciones, upper="ellipse") #El elipse permite ver el signo de la relaciÃ³n
+corrplot.mixed(correlaciones, upper="circle") #podemps dar forma de circulo, o tambiÃ©n cuadrado con square
+plot(datos$ID_PIB,datos$PIBpc,col="red",xlab="ID/PIB",ylab="PIBpc",main="Grafico dispersiÃ³n") #grafico de dispersion
 pairs(datos,col="blue") #Multiples graficos de dispersion
 datos.maha=mahalanobis(datos,center=colMeans(datos),cov=cov(datos)) #Distancia de Mahalanobis
 plot(datos.maha)
-text(1:27,datos.maha,1:27,pos=1) #añadimos el numero de observaciones al grafico #pos indica la posicion del texto
-text(x=1:27,y=datos.maha,datospaises$PAIS, pos=3, col="blue") #añadimos el nombre del pais al grafico
+text(1:27,datos.maha,1:27,pos=1) #aÃ±adimos el numero de observaciones al grafico #pos indica la posicion del texto
+text(x=1:27,y=datos.maha,datospaises$PAIS, pos=3, col="blue") #aÃ±adimos el nombre del pais al grafico
 datos[c(1,15),] #muestra los paises 1 y 15 filas c(1,15) son los mas outliers
 #si comparamos 1 y 15 con la media, hay mucha diferencia
-datostip<-scale(datos, center=T, scale=T) #Funcion para tipificar center=T, scale=T; resta media true y divide por dispersión true
+datostip<-scale(datos, center=T, scale=T) #Funcion para tipificar center=T, scale=T; resta media true y divide por dispersiÃ³n true
 datostip<-data.frame(datostip) #convertimos a tabla de datos
 head(datostip)
 summary(datostip) #la media es 0, los datos son mas homogeneos
-#Se podría eliminar los datos atipicos
+#Se podrÃ­a eliminar los datos atipicos
 datossin<-data.frame(datos[-c(1,15),]) #Quitamos Belgica y Luxemburgo
 head(datossin)
 datossin
@@ -68,12 +68,12 @@ cortes<-cutree(datos.hc2, k=4) #cortamos el cluster en cuatro grupos
 cortes #mostramos los grupos
 
 
-# Ponemos cortes como factor y se lo agregamos al conjunto de datos (tanto a datos como a datostip) para que cada paÃ­s tenga su etiqueta
+# Ponemos cortes como factor y se lo agregamos al conjunto de datos (tanto a datos como a datostip) para que cada paÃƒÂ­s tenga su etiqueta
 cortes<-as.factor(cortes)
 summary(cortes) #vemos cuantos paises hay en cada grupo
-datos<-cbind(datos, cortes) #añadimos los cortes a la tabla de datos
+datos<-cbind(datos, cortes) #aÃ±adimos los cortes a la tabla de datos
 head(datos)
-datostip<-cbind(datostip, cortes) #añadimos los cortes
+datostip<-cbind(datostip, cortes) #aÃ±adimos los cortes
 
 #Ahora podemos separar los casos por grupos
 
@@ -102,7 +102,7 @@ cluster.km #numero de grupo para cada pais
 is.factor(cluster.km)
 cluster.km<-as.factor(cluster.km) #lo convertimos en factor
 
-#Añadimos tambien la etiqueta de cluster a los conjuntos de datos
+#AÃ±adimos tambien la etiqueta de cluster a los conjuntos de datos
 datos<-cbind(datos, cluster.km)
 datostip<-cbind(datostip, cluster.km)
 head(datos) #Podemos comparar las  agrupaciones por los dos metodos
@@ -121,7 +121,7 @@ attach(datos)
 
 #Primero con IDE
 aggregate(IDE, by=list(cortes),FUN=summary) #estadisticos por grupos para IDE
-plot(IDE~cortes,col="lightgreen") #Caja y bigotes: Medias con intervalos de confianzaIDE según grupo
+plot(IDE~cortes,col="lightgreen") #Caja y bigotes: Medias con intervalos de confianzaIDE segÃºn grupo
 #Test para comprobar hipotesis
 leveneTest(IDE~cortes,datos)
 tapply(IDE, cortes, shapiro.test)
@@ -206,7 +206,7 @@ is.factor(cluster.km)
 which.max(datos$PIBpc)
 datos[15,]
 
-#Adicionalmente, calculo de eta cuadrado, los parámetros y el ECM para ANOVA del IDE
+#Adicionalmente, calculo de eta cuadrado, los parÃ¡metros y el ECM para ANOVA del IDE
 
 IDE.aov <- aov(IDE~cortes,data=datos) #La funcion aov genera la lista de datos ANOVA
 summary(IDE.aov)
@@ -226,7 +226,7 @@ ECM
 #Grafico de barras 
 library(ggplot2)
 
-#Grafico con el número de países por grupo
+#Grafico con el nÃºmero de paÃ­ses por grupo
 ggplot(data = datos) +
   geom_bar(mapping = aes(x = cortes,fill = cortes))
 
