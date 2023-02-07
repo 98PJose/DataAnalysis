@@ -20,7 +20,7 @@ library(mosaic)
 SmarketDT <- Smarket
 attach(Smarket)
 
-Covid <- read_excel("C:/Users/98pjo/OneDrive/Escritorio/Universidad/Cuarto/Análisis estadístico/Regresión Logística/Covid.xlsx")
+Covid <- read_excel("C:/Users/98pjo/OneDrive/Escritorio/Universidad/Cuarto/AnÃ¡lisis estadÃ­stico/RegresiÃ³n LogÃ­stica/Covid.xlsx")
 
 #Clasificacion logistica simple
 #Predecimos direction con lag1
