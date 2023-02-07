@@ -32,7 +32,7 @@ ggplot(data = SALES[1:365]) +
 
 plot(1:365,SALES$Sales[1:365])
 
-#Sucede que hay varios datos por día
+#Sucede que hay varios datos por dÃ­a
 
 #Agrupamos por dia
 
