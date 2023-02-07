@@ -110,7 +110,7 @@ datosprov.sc <- as.data.frame(cbind(provincias,datosprov,datosprov.afcp3$scores)
 head(datosprov.sc)
 datosfactor<-as.data.frame(cbind(datosprov,datosprov.afcp3$scores))
 
-#Análisis descriptivo y gráfico de las puntuaciones
+#AnÃ¡lisis descriptivo y grÃ¡fico de las puntuaciones
 summary(datosfactor[23:27])
 corr2<-cor(datosfactor[23:27]) 
 corr2
