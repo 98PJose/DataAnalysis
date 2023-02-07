@@ -12,7 +12,7 @@ library(FitAR)
 #Datos
 
 library(readr)
-accion <- read_csv("C:/Users/98pjo/OneDrive/Escritorio/Universidad/Tercero/Métodos y Modelos Econométricos/ARIMA/accion.txt")
+accion <- read_csv("C:/Users/98pjo/OneDrive/Escritorio/Universidad/Tercero/MÃ©todos y Modelos EconomÃ©tricos/ARIMA/accion.txt")
 summary(accion)
 
 tsData = ts(accion$Close[1:200], start = c(2011,1), frequency = 12)
