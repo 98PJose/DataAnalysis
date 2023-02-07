@@ -11,7 +11,7 @@ PIBtabla <- data.frame(Data$PIB,Data$t)
 attach(Data) #Fijamos data para no tener que hacer lo anterior con todo
 GP #Ejemplo
 
-#Gráfica de correlaciones. Dispersiones entre variables.
+#GrÃ¡fica de correlaciones. Dispersiones entre variables.
 pairs(Data[,-1]) #Quitamos t, la fecha es una variable cualitativa.
 
 #Matriz de correlaciones lineales.
@@ -81,9 +81,9 @@ EQ2 <- lm(i ~ Ms + FBC, Data )
 summary(EQ2)
 
 EQ1 <- lm(PIB ~ FBC + X + GP + EQ2$fitted.values, Data )
-summary(EQ1) #usamos la estimación de i para estimar PIB
+summary(EQ1) #usamos la estimaciÃ³n de i para estimar PIB
 
-#Tabla de datos de la estimación
+#Tabla de datos de la estimaciÃ³n
 tablaestimacion <- data.frame(t,PIB,EQ1$fitted.values,EQ1$residuals,i,EQ2$fitted.values,EQ2$residuals)
 
 
