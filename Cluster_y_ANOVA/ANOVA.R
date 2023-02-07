@@ -13,7 +13,7 @@ attach(tricot) #Evita tener que usar constantemente objetos como tricot$metodo p
 split(puntuacion,metodo) #Dibide la variable cuantitativa en funcion del factor
 tapply(puntuacion,metodo,summary) #aplica summary para la cuantitativa(puntuacion) segun cada nivel de la categorica (metodo)
 tapply(puntuacion,metodo,mean) #por ejemplo podemos aplicar solo la media mean
-help(tapply) #Aplica una función a los datos dados, según variable o nivel (datos,variable,funcion)
+help(tapply) #Aplica una funciÃ³n a los datos dados, segÃºn variable o nivel (datos,variable,funcion)
 
 plot(puntuacion,metodo,col="blue")  #grafico de puntuacion segun cada metodo
 par(mfrow=c(2,2))
@@ -43,7 +43,7 @@ tapply(puntuacion,metodo,pearson.test)  #Pearson
 detach(tricot)
 
 # Siguen mas o menos distribuciones normales con varianza comun para las tres poblaciones si tomamos 
-# el nivel de significación del 1% (en los tests anteriores no hemos rechazado la hipótesis nula).
+# el nivel de significaciÃ³n del 1% (en los tests anteriores no hemos rechazado la hipÃ³tesis nula).
 
 # La tabla de analisis de la varianza es (Tabla ANOVA)
 tricot.aov <- aov(puntuacion~metodo,data=tricot) #La funcion aov genera la lista de datos para la puntuacion segun el metodo
@@ -53,14 +53,14 @@ tricot.aov <- aov(puntuacion~metodo,data=tricot) #La funcion aov genera la lista
   #Como se saca el p-valor de la F(G-1,n-G) 
 pf(5.5, 2, 11, lower.tail = FALSE) #Funcion de probabilidad en una F para el valor F = 5.5, G-1 = 2 y n - G = 11
 
-#valor crítico de F. #Valor que deja por encima 0,05 de probabilidad:
+#valor crÃ­tico de F. #Valor que deja por encima 0,05 de probabilidad:
 qf(0.05, 2, 11, lower.tail = FALSE) 
 
 #Otra forma mediante modelos lineales
 tricot.lm <- lm(puntuacion~metodo,data=tricot)
 anova(tricot.lm)
 
-# Como el p-valor es peque�o (0.0221<0.05) se concluye que hay diferencias significativas entre los metodos.
+# Como el p-valor es pequeño (0.0221<0.05) se concluye que hay diferencias significativas entre los metodos.
 
 # Las estimaciones de los parametros se obtiene con
 model.tables(tricot.aov) #Respecto a la media global cual es la diferencia, por ejemplo A esta una unidad por debajo
@@ -74,7 +74,7 @@ ECM
 # Esta estimacion tambien se obtiene del modelo lineal
 summary(tricot.lm)$sigma^2
 
-# Por último hacemos un análisis "ex-post" para ver las diferencias dos a dos mediante Tukey.
+# Por Ãºltimo hacemos un anÃ¡lisis "ex-post" para ver las diferencias dos a dos mediante Tukey.
 TukeyHSD(tricot.aov) #Comparaciones dos a dos entre variables #Ho igualdad de medias. p - valor = p adj
 
 ###  ANOVA DE VARIOS FACTORES
@@ -96,7 +96,7 @@ str(Juarte)
 # Vamos a ver unos graficos que nos dan evidencias sobre si existen diferencias e interaccion.
 
 attach(Juarte) 
-par(mfrow=c(2,2)) #Partimos la pantalla de gr�ficos en dos filas y dos columnas.
+par(mfrow=c(2,2)) #Partimos la pantalla de gráficos en dos filas y dos columnas.
 boxplot(ventas~cateprod)
 boxplot(ventas~establec)
 interaction.plot(cateprod,establec,ventas)
@@ -125,23 +125,23 @@ tapply(ventas,establec,lillie.test)
 tapply(ventas,cateprod,pearson.test)  #Pearson
 tapply(ventas,establec,pearson.test)
 detach(Juarte)
-#Podemos separar la tabla de datos por categor�a de un factor, por ejemplo segun categoria de producto
-partes <- data.frame(split(Juarte,cateprod)) #Dividimos juarte seg�n categor�a de producto
+#Podemos separar la tabla de datos por categoría de un factor, por ejemplo segun categoria de producto
+partes <- data.frame(split(Juarte,cateprod)) #Dividimos juarte según categoría de producto
 View(partes)
-#As� podemos visualizar la normalidad
-hist(partes$Econ�mica.ventas,main="Histograma ventas clase econ�mica",xlab="Ventas econ�micas") 
+#Así podemos visualizar la normalidad
+hist(partes$Económica.ventas,main="Histograma ventas clase económica",xlab="Ventas económicas") 
 
-# La tabla ANOVA para un dise�o de dos factores con interaccion es:
+# La tabla ANOVA para un diseño de dos factores con interaccion es:
 Juarte.aov <- aov(ventas~cateprod*establec, data=Juarte) #(*) considera interaccion
 summary(Juarte.aov) #Ho: Coeficiente = 0. Como si fuera regresion lineal
-#la interraci�n entre factores no es significativa
+#la interración entre factores no es significativa
 
 # Como la interaccion no es significativa, cosa que sospechbamos a partir de los graficos de perfil, 
 # dejamos solo los efectos principales:
 Juarte.aov <- aov(ventas~cateprod+establec, data=Juarte) #(+) No considera la interaccion
 summary(Juarte.aov)
 
-# La estimacion del tama�o de los efectos es:
+# La estimacion del tamaño de los efectos es:
 eta2.cateprod<- summary(Juarte.aov)[[1]][1,2]/(summary(Juarte.aov)[[1]][1,2] + summary(Juarte.aov)[[1]][3,2]) #4734/(4734+1456) se calcula con esos elementos
 eta2.establec<- summary(Juarte.aov)[[1]][2,2]/(summary(Juarte.aov)[[1]][2,2]+ summary(Juarte.aov)[[1]][3,2])
 eta2.cateprod
@@ -151,7 +151,7 @@ summary(Juarte.aov)[[1]][1,2]
 #Mide el efecto de cada factor, la categoria del producto afecta mas, ya se veia en su diferencia de medias grafica
 
 # Las estimaciones de los parametros se obtiene con:
-model.tables(Juarte.aov) #Diferencia respecto a la gran media, la categor�a normal esta 10,79 por encima de la gran media
+model.tables(Juarte.aov) #Diferencia respecto a la gran media, la categoría normal esta 10,79 por encima de la gran media
 model.tables(Juarte.aov, type="mean") #medias del subgrupo dentro del grupo y la gran media
 
 # El error cuadratico medio o estimacioon insesgada de la varianza del modelo es
