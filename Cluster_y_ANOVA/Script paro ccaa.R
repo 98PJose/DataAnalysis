@@ -7,7 +7,7 @@ head(Paro)
 attach(Paro)
 
 
-#Conversión a factor
+#ConversiÃ³n a factor
 is.factor(Paro$COMUNIDAD)
 Paro$COMUNIDAD<-as.factor(Paro$COMUNIDAD)
 is.factor(Paro$EDADES)
@@ -22,19 +22,19 @@ PAROEDAD<-as.data.frame(split(TASAPARO,EDADES)) #Divide la variable cuantitativa
 head(PAROEDAD)
 tapply(TASAPARO,EDADES,summary) #summary de la tasa de paro por edades
 
-#Analisis gráfico
+#Analisis grÃ¡fico
 par(mfrow=c(1,3))
 boxplot(TASAPARO~COMUNIDAD, col="yellow")  
 boxplot(TASAPARO~EDADES, col="lightblue")
 boxplot(TASAPARO~SEXO, col="lightgreen")
-#Tasa de paro según CCAA
+#Tasa de paro segÃºn CCAA
 
 
 # Vamos a comprobar que no haya problemas de heteroscedasticidad mediante el test de Levene.
 # Para ello tenemos que cargar la libreria "car", tambien hay funciones en R 
 # para los test de Bartlett y Fligner-Killeen.
 
-#Contraste de hipótesis del ANOVA
+#Contraste de hipÃ³tesis del ANOVA
 library(car)
 ##Homocedasticidad
 #COMUNIDAD
@@ -55,19 +55,19 @@ library(nortest)
 tapply(TASAPARO,COMUNIDAD,shapiro.test)  
 tapply(TASAPARO,EDADES,shapiro.test)
 tapply(TASAPARO,SEXO,shapiro.test)
-#Se rechaza la hipótesis nula de normalidad en todos los casos
+#Se rechaza la hipÃ³tesis nula de normalidad en todos los casos
 #Histograma
-partes <- data.frame(split(Paro,COMUNIDAD)) #Dividimos juarte según categoría de producto
+partes <- data.frame(split(Paro,COMUNIDAD)) #Dividimos juarte segÃºn categorÃ­a de producto
 View(partes)
-#Así podemos visualizar la normalidad
+#AsÃ­ podemos visualizar la normalidad
 par(mfrow=c(1,1))
-hist(partes$Andalucía.TASAPARO,main="Histograma Tasa de Paro AND",xlab="Paro Andalucía") 
+hist(partes$AndalucÃ­a.TASAPARO,main="Histograma Tasa de Paro AND",xlab="Paro AndalucÃ­a") 
 
 # La tabla de analisis de la varianza es (Tabla ANOVA)
 Paro.aov <- aov(TASAPARO~COMUNIDAD*SEXO*EDADES,data=Paro) #La funcion aov genera la lista de datos para la puntuacion segun el metodo
 summary(Paro.aov)
 #Tanto los factores como sus interacciones son todos significativos
-# La estimacion del tamaño de los efectos es:
+# La estimacion del tamaÃ±o de los efectos es:
 eta2.COMUNIDAD<- summary(Paro.aov)[[1]][1,2]/(summary(Paro.aov)[[1]][1,2] + 1757) 
 eta2.SEXO<- summary(Paro.aov)[[1]][2,2]/(summary(Paro.aov)[[1]][2,2]+ 1757)
 eta2.EDADES<- summary(Paro.aov)[[1]][3,2]/(summary(Paro.aov)[[1]][3,2]+ 1757)
