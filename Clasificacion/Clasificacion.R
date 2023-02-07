@@ -1,4 +1,4 @@
-# Utilizando los datos iris (ya vienen en el paquete base) comparar bajo aprendizaje supervisado las tÃ©cnicas de clasificacion vistas, 
+# Utilizando los datos iris (ya vienen en el paquete base) comparar bajo aprendizaje supervisado las tÃƒÂ©cnicas de clasificacion vistas, 
 # en cuanto a su precision y capacidad de generalizacion, utilizando validacion:
   
 # a)	Training-Test con la proporcion 70% para entrenamiento y 30% para test
@@ -71,7 +71,7 @@ library(class)
 
 #prediccion para todas las observaciones
 iris.knn.pred.1 = knn(iris[train,-5],iris[,-5],iris$Species[train],k=3,prob=T)
-# Probad cambiando k=1, 5, 7,... a ver que pasa ¿para cual sale mejor?
+# Probad cambiando k=1, 5, 7,... a ver que pasa Â¿para cual sale mejor?
 # Comprobad que el mejor resultado sale con k=13.
 #[train,-5] quitamos la quinta variable, es cualitativa
 #utilizamos conjunto de entrenamiento
@@ -139,11 +139,11 @@ text(iris.rpart, use.n=T)
 print(iris.rpart)
 printcp(iris.rpart) #se busca el menor error de validacion
 
-# error en validacion cruzada en funcion del tamaño del arbol y del coste factor de complejidad
+# error en validacion cruzada en funcion del tamaÃ±o del arbol y del coste factor de complejidad
 plotcp(iris.rpart) #linea discontinua es el minimo mas desviacion estandar
 #se busca arbol mas sencillo cuyo error sea menor al minimo mas una desviacion estandar
-#seria un arbol de tamaño 3 
-#en printcp(iris.rpart) vemos que tamaño 3 tiene cp 0.0228
+#seria un arbol de tamaÃ±o 3 
+#en printcp(iris.rpart) vemos que tamaÃ±o 3 tiene cp 0.0228
 
 #Prediccion
 #total
@@ -177,7 +177,7 @@ iris.prune = autoprune(formula, iris, train)
 iris.prune
 plot(iris.prune,)
 text(iris.prune, use.n=T)
-#Vemos que deja un tamaño 3 como hemos visto antes
+#Vemos que deja un tamaÃ±o 3 como hemos visto antes
 
 # Una representacion grafica mas vistosa con rattle
 library(rattle)
@@ -188,7 +188,7 @@ fancyRpartPlot(iris.prune, digits = 2,
 ###	REDES NEURONALES
 library(nnet)
 
-se.seed(102) #Los primeros pesos serían aleatorios, los fijamos
+se.seed(102) #Los primeros pesos serÃ­an aleatorios, los fijamos
 
 iris.nnet = nnet(formula,data=iris, size = 3, trace = F, decay = 0.0005, 
                  linout=F, entropy=T, maxit = 2000, subset = train)
