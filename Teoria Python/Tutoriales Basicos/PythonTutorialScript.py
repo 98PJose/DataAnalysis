@@ -1,0 +1,321 @@
+###Using Python as a calculator###
+
+5+5
+
+2 + 2
+
+50 - 5*6
+
+(50 - 5*6) / 4
+
+8 / 5  # division always returns a floating point number
+
+#Division (/) always returns a float. 
+#To do floor division and get an integer result (discarding any fractional result) you can use the // operator
+#to calculate the remainder you can use %:
+
+17 / 3  # classic division returns a float
+
+17 // 3  # floor division discards the fractional part
+
+17 % 3  # the % operator returns the remainder of the division
+
+5 * 3 + 2  # floored quotient * divisor + remainder
+
+# With Python, it is possible to use the ** operator to calculate powers
+
+5 ** 2  # 5 squared
+
+2 ** 7  # 2 to the power of 7
+
+### Answer is saved on ( _ ) symbol
+
+tax = 12.5 / 100
+price = 100.50
+price * tax
+_
+price + _
+
+round(_, 2) 
+
+### Making variables (=)
+
+width = 20
+height = 5 * 9
+width * height
+
+#Assigning multiple values to multiple variables
+
+a, b, c = 5, 3.2, "Hello"
+
+print (a)
+print (b)
+print (c)
+
+#Same value to multiple variables at once
+
+x = y = z = "same"
+
+print (x)
+print (y)
+print (z)
+
+###Making a matrix
+
+A =[[1,2,3],[4,5,6],[7,8,9]]
+
+### Working with lists
+
+# Make a list
+
+squares = [1, 4, 9, 16, 25]
+squares
+
+squares[0]  # indexing returns the item
+
+squares[1]
+
+squares[-1]
+
+# Slice the list
+
+squares[-3:]  # slicing returns a new list
+
+squares[0:3]
+
+squares[2:]
+
+squares[:2]
+
+#Lists also support operations like concatenation:
+
+squares + [36, 49, 64, 81, 100]
+
+# Replace content
+
+cubes = [1, 8, 27, 65, 125]  # something's wrong here
+4 ** 3  # the cube of 4 is 64, not 65!
+
+cubes[3] = 64  # replace the wrong value
+cubes
+
+#You can also add new items at the end of the list, by using the append()
+
+cubes.append(216)  # add the cube of 6
+cubes.append(7 ** 3)  # and the cube of 7
+cubes
+
+##Assignment to slices:
+
+letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+letters
+
+# replace some values
+letters[2:5] = ['C', 'D', 'E']
+letters
+
+# now remove them
+letters[2:5] = []
+letters
+
+# clear the list by replacing all the elements with an empty list
+letters[:] = []
+letters
+
+# len() gives the length of the list
+
+letters = ['a', 'b', 'c', 'd']
+len(letters)
+
+# Nesting list. Create a list inside another list
+
+a = ['a', 'b', 'c']
+n = [1, 2, 3]
+x = [a, n]
+x
+
+x[0] #obtain a element of the list
+
+x[0][1] #ontain a element of the sublist
+
+x[1][2]
+ 
+#making a loop example
+
+# Fibonacci series:
+# the sum of two elements defines the next
+a, b = 0, 1 #define a=0, b=1
+while a < 10: #condition
+    print(a)
+    a, b = b, a+b
+
+##Multi-line statement
+
+#we can make a statement extend over multiple lines with the line continuation character (\)
+
+a = 1 + 2 + 3 + \
+    4 + 5 + 6 + \
+    7 + 8 + 9
+a
+
+#line continuation is implied inside parentheses ( ), brackets [ ], and braces { }
+
+a = (1 + 2 + 3 +
+    4 + 5 + 6 +
+    7 + 8 + 9)
+
+#multiple statements in a single line using semicolons
+
+a = 1; b = 2; c = 3
+
+#Identation (Tabulador) used as separator of blocks of code
+
+for i in range(1,11):
+    print(i)
+    if i == 5:
+        break
+
+#Apply a for() to a list:
+
+cubes=[2,4,9,16]
+
+for i in range(0,len(cubes)):
+    y = cubes[i]+1
+    print(y)
+
+def cubes(n): #funcion que calcula sequencias de cuadrados
+    for i in range(0,n):
+        y = i
+        x = i
+        print(x*y)
+
+cubes(5)
+
+
+#funcion que calcula sequencias de cuadrados y para si son mayores que 100
+
+def cubes_stop(n): #funcion que calcula sequencias de cuadrados
+    for i in range(0,n):
+        y = i
+        x = i
+        print(x*y)
+        if x*y > 100: #el bucle para si es mayor que 100
+            break
+
+cubes_stop(100)
+
+# Operators
+
+x = 10
+y = 12
+
+x>y
+
+x<y
+
+x==y
+
+x!=y
+
+x>=y
+
+x<=y
+
+# Definite a function
+
+def a(x):
+    b = (x+1)/2
+    return(b)
+
+a(3)
+
+w = a(3)
+
+#Another example
+
+def f(x,y):
+    a = x + y
+    return(a)
+
+f(3,1)
+
+#Using if else
+
+def g(x):
+    if x > 5:
+      y = x+10
+      return(y)
+    else:
+      z = 5
+      return(z)
+
+g(6)   
+g(2)
+
+#Functions can work with characters
+
+drink = "Available"
+food = None
+
+def menu(x):
+    if x == drink:
+        print(drink)
+    else:
+        print(food)
+
+menu(drink)
+menu(food)
+
+### Strings "" , ''
+
+'spam eggs'  # single quotes
+
+'doesn't' #error
+
+'doesn\'t'  # use \' to escape the single quote...
+
+"doesn't"  # ...or use double quotes instead
+
+'"Yes," they said.'
+
+"\"Yes,\" they said."
+
+'"Isn\'t," they said.'
+
+print('"Isn\'t," they said.') #prints the string into the console
+
+s = 'First line.\nSecond line.'  # \n means newline
+s  # without print(), \n is included in the output
+
+print(s)  # with print(), \n produces a new line
+
+#Strings can be concatenated (glued together) with the + operator, and repeated with *
+
+# 3 times 'un', followed by 'ium'
+3 * 'un' + 'ium'
+
+#Take characters
+
+word = 'Python'
+
+word[0]  # character in position 0
+
+word[5]  # character in position 5
+
+#Indices may also be negative numbers, to start counting from the right
+
+word[-1]  # last character
+
+word[-2]  # second-last character
+
+word[-6]
+
+word[0:2]  # characters from position 0 (included) to 2 (excluded)
+
+word[2:5]  # characters from position 2 (included) to 5 (excluded)
+
+word[:2]   # character from the beginning to position 2 (excluded)
+
+word[4:]   # characters from position 4 (included) to the end
+
+word[-2:]  # characters from the second-last (included) to the end
