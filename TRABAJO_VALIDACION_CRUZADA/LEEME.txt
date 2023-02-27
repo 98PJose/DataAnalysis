@@ -1,0 +1,25 @@
+El trabajo sigue una estructura modular, es decir, esta separado en distintos script. La intención es facilitar la división
+del trabajo, que sea más fácil de leer y evitar errores encadenados y además facilitar la reutilización de sus partes.
+
+1) RECURSOS es un script que recoge las librerias y funciones empleadas, debe ejecutarse en primer lugar
+
+2) PREPARACION_Y_DESCRIPCION recoge la carga y transformación de los datos, el análisis descriptivo y la limpieza de NA, 
+debe ejecutarse en segundo lugar.
+
+3) ANOMALIAS recoge la detección, tratamiento y análisis de outliers, debe ejecutarse en tercer lugar.
+
+4) P_PRIORI recoge el proceso para equlibrar las observaciones de clase minoritaria y mayoritaria, 
+debe ejecutarse en cuarto lugar.
+
+Alternativamente podemos cargar el archivo RData llamado DATOS_ELABORADOS creado con estos scripts, 
+y que ya incluye todas las transformaciones, evitando ejecutar los códigos anteriores salvo el punto 1) para cargar
+las librerías.
+
+5) TRAIN_TEST recoge el código empleado para estudiar cual es el mejor modelo de clasificación para estos datos,
+mediante train-test.
+
+6) KFOLDS recoge el código empleado para estudiar el error de los modelos mediante validación cruzada de K folds
+
+RESUMEN_MD es una versión reducida del trabajo, ligera en código y que va al grano, mostrando solo las técnicas utilizadas.
+
+TRABAJO_MD es la versión completa, incluye el código no repetitivo y todas las técnicas que se han probado en el proyecto.

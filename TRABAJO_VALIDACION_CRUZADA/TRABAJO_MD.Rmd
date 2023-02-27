@@ -1,0 +1,3133 @@
+---
+title: "Validación Cruzada"
+author: "Pedro José Piqueras Martínez"
+date: "25/2/2023"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+##### Librerias #####
+
+##### VALIDACION_CRUZADA #####
+
+library(MASS)                    # modelos
+library(klaR)                    # clasificacion y visualizacion
+library(e1071)                   # modelos
+library(class)                   # modelos
+library(caret)                   # modelos y precision
+library(ROCR)                    # curva ROC
+library(nortest)                 # tests
+library(MVN)                     # test normal multivariante
+library(biotools)                # cluster
+library(nnet)                    # redes neuronales de una capa
+library(adabag)                  # arboles y combinaciones
+library(tidyverse)               # coleccion de paquetes para transformacion
+library(kknn)                    # algoritmo knn
+library(rattle)                  # graficos arboles
+library(randomForest)            # Random Forest
+library(nnet)                    # Red Neuronal 1 capa
+
+#### PREPARACION Y DESCRIPCION ####
+
+library(readxl)                  # leer xlsx
+library(VIM)                     # NAs
+library(skimr)                   # resumir datos
+library(tidyverse)               # coleccion de paquetes para transformacion
+library(corrplot)                # grafico correlaciones
+library(ggplot2)                 # graficos
+library(DataExplorer)            # estadistica descriptiva
+library(moments)                 # asimetria y curtosis
+library(GGally)                  # grafico pairs ggplot
+library(tictoc)                  # cronometro
+
+#### ANOMALIAS ####
+
+library(tidyverse)               # coleccion de paquetes para transformacion
+library(ggplot2)                 # graficos
+library(nortest)                 # test normalidad
+library(outliers)                # herramientas para detectar outliers
+library(MVN)                     # contrastar normal multivariante
+library(CerioliOutlierDetection) # mahalanobis robusto y test
+library(mvoutlier)               # outliers multivariantes
+library(robustbase)              # estimadores robustos
+library(DDoutlier)               # LOF
+library(factoextra)              # clusters
+library(useful)                  # clusters
+library(cluster)                 # clusters
+library(tictoc)                  # cronometro
+
+##### P_PRIORI ######
+
+library(tidyverse)               # coleccion de paquetes para transformacion
+library(smotefamily)             # generacion de datos por SMOTE
+library(tictoc)                  # cronometro
+
+#### Informe ####
+
+library(DT)                      # tablas mas bonitas
+```
+
+```{r echo=FALSE, include=FALSE}
+##### FUNCIONES #####
+
+#### Funcion para cambiar nombre columnas ####
+
+# genera un vector de p nombres X_1, X_2 ... X_p
+
+# la variable objetivo debe ser la primera columna
+
+NOMBRE_VARIABLES <- function(p){
+  
+  x <- character(p)
+  
+  for (i in 1:p) {
+    
+    x[i] <- paste("X_", i, sep="")
+    
+  }
+  
+  return(x)
+  
+}
+
+#### Resumen estadistico ####
+
+# proporciona media, cuartiles y desviacion tipica de una variable
+
+# requiere library(moments), library(dplyr) y library(tidyr)
+
+# dq es la distancia intercuartilica
+
+RESUMEN <- function(datos){
+  
+  MEDIDAS <- function(x){
+    m <- mean(x)
+    s <- sd(x)
+    cv <- abs(s/m)
+    c_0 <- min(x)
+    c_1 <- quantile(x,0.25)
+    c_2 <- quantile(x,0.5)
+    c_3 <- quantile(x,0.75)
+    c_100 <- max(x)
+    dq <- c_3-c_1
+    asimetria <- skewness(x)
+    curtosis <-  kurtosis(x)
+    
+    salida <- data.frame('media' = m,'varianza'=s^2, 'sd' = s, 'cv' = cv, 
+                         'min' = c_0, 'q1' = c_1, 'mediana' = c_2, 'q3' = c_3,
+                         'max' = c_100, 'dq' = dq,
+                         'asimetria' = asimetria, 'curtosis' = curtosis)
+    
+    return(salida)
+  }
+  
+  # lista vacia para el for
+  summary_list <- list()
+  
+  # iteramos a lo largo de las columnas
+  for (col in names(datos)) {
+    # comprobamos que la variable sea numerica
+    if (is.numeric(datos[[col]])) {
+      # aplicamos la funcion a cada columna
+      col_summary <- MEDIDAS(datos[[col]])
+      # guardamos los resultados
+      summary_list[[col]] <- col_summary
+    }
+  }
+  
+  # combinamos los resultados en una tabla
+  df_summary <- bind_rows(summary_list, .id = "variable") %>%
+    rownames_to_column(var = "summary_measure")%>% select(-summary_measure)
+  
+  # salida
+  
+  return(df_summary)
+  
+}
+
+#### Outliers por distancia intercuartilica ####
+
+# calcula que observaciones quedan fuera de 1.5*IQR
+# devuelve el indicador de fila
+# indicamos que columna usa
+# coef es el multiplo de iqr
+
+OUTLIERS_IQR = function (datos, ind.columna, coef){
+  
+  columna.datos = datos[,ind.columna] # selecciona columna
+  
+  cuartil.primero = quantile(columna.datos)[2] # cuartil 1 
+  
+  #quantile[1] es el mínimo y quantile[5] el máximo.
+  
+  cuartil.tercero = quantile(columna.datos)[4] # cuartil 3
+  
+  iqr = cuartil.tercero - cuartil.primero # distancia iqr
+  
+  extremo.superior.outlier = (iqr * coef) + cuartil.tercero # cota superior
+  
+  extremo.inferior.outlier = cuartil.primero - (iqr * coef) # cota inferior
+  
+  son.outliers.IQR  = columna.datos > extremo.superior.outlier |
+    columna.datos < extremo.inferior.outlier # cuales escapan las cotas
+  
+  return (which(son.outliers.IQR  == TRUE))
+}
+
+#### Outliers IQR total ####
+
+# aplica la funcion OUTLIERS_IQR a todas las columnas
+# necesita columnas numericas
+# requiere library(dplyr)
+
+OUTLIERS_IQR_TOTAL = function (datos, coef){
+  
+  datos = datos %>% select(where(is.numeric))
+  
+  lista <- vector("list", dim(datos)[2])
+  names(lista) <- names(datos)
+  
+  for (i in 1:dim(datos)[2]){
+    lista[[i]] <- OUTLIERS_IQR(datos,i,coef)
+  }
+  
+  return(lista)
+  
+}
+
+#### Distancia a la mediana ####
+
+# df debe ser numerico
+
+# calcula observacion con mayor distancia a la mediana por variable
+
+dist_mediana <- function(datos) {
+  
+  datos = datos %>% select(where(is.numeric))
+  
+  # inicializamos lista
+  max_dists <- list()
+  
+  # mediana de cada variable
+  medianas <- sapply(datos, median)
+  
+  # iteramos para cada variable
+  
+  for (var in names(datos)) {
+    
+    # distancia de la mediana a cada observacion
+    dists <- abs(datos[[var]] - medianas[var])
+    
+    # observacion con mayor distancia
+    max_dist_row <- which.max(dists)
+    
+    # guardamos la maxima distancia y su indice
+    max_dists[[var]] <- c(max_dist_row, dists[max_dist_row])
+    
+  } # fin del loop
+  
+  # combinamos en un data frame
+  
+  result_datos <- data.frame(
+    Variable = names(datos),
+    Observacion = sapply(max_dists, "[[", 1),
+    Distancia = sapply(max_dists, "[[", 2)
+  )
+  
+  return(result_datos)
+}
+
+#### Test Grubbs para tabla ####
+
+# calcula test Grubbs y evalua para significacion alfa
+
+# Ho: No hay outliers
+
+# H1: Hay un outlier
+
+GRUBBS_TABLA <- function(datos,alfa){
+  
+  # aplicamos test de Grubbs por columna
+  
+  resultados_grubbs <- datos %>%
+    select(where(is.numeric)) %>%
+    apply(2, grubbs.test)
+  
+  # formato de tabla
+  
+  (tabla_grubbs<- data.frame(
+    variable = names(resultados_grubbs),
+    p_value = sapply(resultados_grubbs, function(x) x$p.value),
+    H0 = sapply(resultados_grubbs, function(x) x$p.value > alfa)))
+  
+  # salida
+  
+  return(tabla_grubbs)
+  
+}
+
+#### Borrar outliers segun Grubbs ####
+
+# Aplica Grubbs y borra las mas lejanas a la media si se rechaza H0
+
+GRUBBS_REMOVER <- function(datos, alfa) {
+  
+  # Grubbs por variable y decision para alfa
+  resultados_grubbs <- GRUBBS_TABLA(datos, alfa)
+  
+  # Identificar variables que rechazan H0
+  variable_reject <- resultados_grubbs$variable[resultados_grubbs$H0 == FALSE]
+  
+  # copia de los datos de entrada
+  datos_modif <- datos
+  
+  # borramos outlier en las variables identificadas
+  for (variable in variable_reject) {
+    
+    # media y desviacion
+    mean_var <- mean(datos_modif[[variable]])
+    sd_var <- sd(datos_modif[[variable]])
+    
+    # calculamos test de Grubbs
+    grubbs_stat <- abs((datos_modif[[variable]] - mean_var) / sd_var)
+    
+    # identificamos observacion con mayor valor de Grubbs
+    index_remove <- which.max(grubbs_stat)
+    
+    # borramos el outlier
+    datos_modif <- datos_modif[-index_remove, ]
+  }
+  
+  # salida
+  return(datos_modif)
+}
+
+#### Outliers K-Medias ####
+
+# calcula distancia euclidea de observaciones a centroides
+
+# selecciona las n mas alejadas
+
+# cluster es un objeto de cluster k-medias
+
+# n observaciones mas alejadas en orden descendente que buscamos
+
+OUTLIERS_KMEDIAS <- function(datos, cluster,n) {
+  
+  # distancia euclidea
+  dist_centroide <- function(datos,centroides){
+    return(sqrt(rowSums((datos - centroides)^2)))
+  }
+  
+  # centroides en formato largo
+  centroides <- cluster$centers[cluster$cluster, ]
+  
+  # calculamos distancias
+  distancias <- datos %>% select(where(is.numeric)) %>% dist_centroide(centroides)
+  
+  # observaciones ordenadas de mayor a menor distancia a su centroide
+  outliers <- order(distancias, decreasing=T)[1:n]
+  
+  return(outliers)
+}
+
+#### Outliers K-medoides ####
+
+# otorga indice de las n observaciones mas alejadas a su medoide
+
+# requiere library(cluster) y library(tidyverse)
+
+# calcula distancia euclidea de observaciones a medoides
+
+# selecciona las k mas alejadas
+
+# n observaciones mas alejadas en orden descendente que buscamos
+
+# k numero de clusters
+
+OUTLIERS_KMEDOIDES <- function(datos,n,k) {
+  
+  # datos numericos
+  datos <- datos %>% select(where(is.numeric))
+  
+  # distancia euclidea
+  dist_medoide <- function(datos,medoides){
+    return(sqrt(rowSums((datos - medoides)^2)))
+  }
+  
+  # matriz de distancias
+  distancias <- dist(datos)
+  
+  # medoides
+  medoides <- datos[pam(distancias,k)$medoids,] %>% select(where(is.numeric))
+  
+  # medoides en formato largo
+  medoides_tabla <- medoides[pam(distancias,k)$clustering,]
+  
+  # calculamos distancias
+  distancias <- datos %>% select(where(is.numeric)) %>% dist_medoide(medoides_tabla)
+  
+  # observaciones ordenadas de mayor a menor distancia a su medoide
+  outliers <- order(distancias, decreasing=T)[1:n]
+  
+  return(outliers)
+}
+
+#### Tomek Link's ####
+
+# ofrece vecino mas cercano a cada observacion minoritaria
+
+# var_clase = variable categorica. Ej: 'X_1'
+
+# valor_minoria = valor que toma minoria en categorica. Ej: 'negativo'
+
+tomek <- function(datos, var_clase, valor_minoria) {
+  
+  # datos de clase minoritaria
+  clase_minoritaria <- datos[datos[, var_clase] == valor_minoria, ]
+  
+  # datos de clase mayoritaria
+  clase_mayoritaria <- datos[datos[, var_clase] != valor_minoria, ]
+  
+  # indices del datos original
+  row_names <- rownames(datos)
+  
+  # distancias entre cada observacion minoritaria y cada observacion mayoritaria
+  distancias <- as.matrix(dist(rbind(clase_minoritaria[, -which(names(clase_minoritaria) == var_clase)], 
+                                     clase_mayoritaria[, -which(names(clase_mayoritaria) == var_clase)])))
+  
+  # extraemos distancias solo entre minoritarios y mayoritarios
+  d_minoria_mayoria <- distancias[1:nrow(clase_minoritaria), (nrow(clase_minoritaria)+1):nrow(distancias)]
+  
+  # indice de la distancia minima a cada minoritario
+  min_index <- apply(d_minoria_mayoria, 1, which.min)
+  
+  # extraemos indice del vecino mas cercano a cada minoritario
+  nn_index <- rownames(clase_mayoritaria)[min_index]
+  
+  # creamos tabla
+  result <- data.frame(minority_index = row_names[datos[, var_clase] == valor_minoria],
+                       majority_index = nn_index)
+  
+  return(result)
+}
+
+#### Generador de datos normales ####
+
+# n = numero de observaciones a generar
+
+# para cada var genera datos normales con su media y desviacion
+
+GENERADOR_RNORM<-function(datos,n){
+  
+  # solo datos numericos
+  datos <- datos %>%  select(where(is.numeric))
+  
+  # numero de columnas
+  p <- ncol(datos)
+  
+  # Crear un dataframe vacío para las nuevas observaciones
+  new_data <- data.frame(matrix(NA, ncol = p, nrow = n)) 
+  
+  for(i in 1:p){
+    
+    # Calcular la media de la variable i
+    variable_mean <- mean(datos[,i]) 
+    
+    # Calcular la desviacion estandar de la variable i
+    variable_sd <- sd(datos[,i]) 
+    
+    # Generar n observaciones 
+    new_data[,i] <- rnorm(n, mean = variable_mean, sd = variable_sd) 
+  }
+  
+  # Nombrar las columnas de la nueva tabla igual que las columnas del dataframe original
+  colnames(new_data) <- colnames(datos) 
+  
+  # salida
+  return(new_data)
+}
+
+#### n observaciones necesarias ####
+
+# calcula n para hacer p priori equivalente al vector deseado
+
+# p_deseado = probabilidades a priori clase minoritaria
+
+# obs_clase = c(obs_mayoritarias, obs_minoritarias)
+
+#### n observaciones necesarias ####
+
+# calcula n para hacer p priori equivalente al vector deseado
+
+# p_deseado = probabilidades a priori c(p_mayoritaria, p_minoritaria)
+
+# obs_clase = c(obs_mayoritarias, obs_minoritarias)
+
+# sobremuestreo -> n a generar
+
+# submuestreo -> n a retirar
+
+n_deseada <- function(p_deseado,obs_clase,muestreo) {
+  if(muestreo=='sobremuestreo'){
+    n<-(obs_clase[2]-(obs_clase[2]*p_deseado[2])-(p_deseado[2]*obs_clase[1]))/(p_deseado[2]-1)
+  }else if(muestreo=='submuestreo'){
+    n<-(obs_clase[2]*p_deseado[1])/(p_deseado[1]-1) + obs_clase[1]
+  }
+  return(round(n,0))
+}
+
+#### PRECISION ####
+
+# arroja medidas de precision para clasificadores
+
+# data = vector de clase real
+
+# prediction = vector de predicciones
+
+PRECISION <- function(data,prediction){
+  
+  confusion_matrix = table(data,prediction,dnn=c("Real Class", "Prediction"))
+  
+  #Accuracy
+  
+  #Class accuracy
+  
+  accuracy.class<-diag(prop.table(confusion_matrix,1))
+  
+  #Global accuracy
+  
+  accuracy.global<-sum(diag(prop.table(confusion_matrix)))
+  
+  #Error
+  
+  #Error by class
+  
+  error.class<-diag(1-prop.table(confusion_matrix,1))
+  
+  #Global error
+  
+  error.global<-1-accuracy.global
+  
+  #Output
+  
+  out <- list('Confusion Matrix'=confusion_matrix,
+              'Class Accuracy'=accuracy.class, 'Global Accuracy'=accuracy.global,
+              'Class Error'=error.class,'Global Error'=error.global)
+  
+  print('Measurement of the accuracy')
+  
+  cat('\n')
+  
+  return(out)
+  
+}
+
+```
+
+# 0) Introducción.
+
+La estadística es una rama de las matemáticas que se encarga de recolectar, analizar e interpretar datos. Una de las principales aplicaciones de la estadística es el modelado de fenómenos y la predicción de resultados futuros. 
+
+Podemos entender el análisis de datos como el procedimiento mediante el cual utilizamos herramientas informáticas junto a técnicas estadísticas para convertir los datos en información la cual analizar y
+sacar conclusiones útiles para la toma de decisiones.
+
+El objetivo de este proyecto es encontrar el mejor modelo para el conjunto de datos de credit score utilizando técnicas de entrenamiento y validación cruzada, es decir, aquel que tenga el mejor rendimiento en términos de precisión y generalización. Buscamos un modelo con la mayor sensibilidad, es decir la mejor capacidad para predecir los casos negativos en los que no se concede el crédito.
+
+La metodología del código busca ser estructurado, eficiente, reproducible y completo. Estructurado en tanto que está en distintos script, para así facilitar la división del trabajo, poder reutilizar los script por separado y evitar que se arrastren fallos de una tarea a otra. Eficiente tanto computacionalmente como en el número de líneas que se van a escribir. La reproducibilidad se enfoca en tener un código bien comentado y también preparado para reutilizarse con el mínimo de cambios posibles. Completo en el sentido de que vamos a usar todos los modelos y técnicas posibles. Esto último puede entrar en conflicto con la reproducibilidad, por ello solo se seleccionan para ser ejecutados algunos modelos y técnicas.
+
+En lo referente a la metodología de este documento, resaltar que en todo momento 
+se borran las variables instrumentales por motivos de eficiencia, pero esto queda 
+oculto.
+
+# 1) Preparación y descripción.
+
+## 1.1 Carga y preparación de los datos
+
+En esta parte del trabajo se cargan los datos de un archivo de Excel, se analizan
+y convierten en factores las variables categóricas para su posterior análisis.
+Así mismo, se renombran las variables para que el informe se pueda reproducir
+con mayor facilidad. 
+
+En el siguiente código cargamos los datos y los mostramos. La función `read_excel`
+carga los datos,`datatable` nos los muestra con un formato más visual y `str` nos 
+dice el tipo de cada variable.
+
+```{r}
+
+# leemos excel
+df <- read_excel("DATOS/credsco.xlsx")
+
+# mostramos los datos
+datatable(df,fillContainer=TRUE)
+
+# tipos de variables
+str(df)
+```
+
+Algunas variables aparecen como `chr` cuando en realidad son factores, por tanto,
+las convertimos a factor usando `mutate_if` y `as.factor`.
+
+```{r echo=TRUE}
+
+df <- df |> mutate_if(is.character, as.factor)
+
+```
+
+Usando nuestra función `NOMBRE_VARIABLES` renombramos nuestras variables para 
+facilitar la reproducibilidad del trabajo y evitar problemas ortográficos.
+Creamos una tabla llamada `nombres_df` para poder identificar las variables. 
+
+```{r}
+# creamos nuevos nombres y guardamos los viejos
+nombres_df <- colnames(df)
+
+colnames(df) <- NOMBRE_VARIABLES(dim(df)[2])
+
+nombres_df <- data.frame('Original'= nombres_df,
+                         'Nuevo'=NOMBRE_VARIABLES(dim(df)[2]))
+
+# mostramos los nuevos nombres
+datatable(nombres_df)
+
+```
+
+Creamos una clave primaria que nos servirá posteriormente para recuperar los 
+outliers
+
+```{r}
+# creamos una clave primaria
+df$ID <- paste0("ID_", 1:nrow(df))
+```
+
+## 1.2 Valores ausentes
+
+En este apartado vamos a identificar posibles valores ausentes y operar los datos
+para evitar problemas con ellos.
+
+```{r}
+# Recuento de NA (FALSE)
+datatable(data.frame(table(complete.cases(df)))) 
+
+# Observaciones con NA
+datatable(df[!complete.cases(df),],fillContainer = TRUE) 
+
+# NA por observacion
+head(rowSums(is.na(df))) 
+
+# Observaciones con NA
+which(is.na(df))
+
+# NA por variable
+colSums(is.na(df)) 
+```
+
+Identificamos que existen cuatro observaciones con NA en la variable objetivo
+`X_1`, son observaciones que queremos predecir y las separamos a la tabla `nd`.
+
+```{r}
+nd <- df[which(is.na(df)),] 
+df <- df[-which(is.na(df)),]
+```
+
+## 1.3 Análisis descriptivo.
+
+En este apartado vamos a estudiar nuestros datos para tratar de obtener una visión
+general y entender su distribución y relaciones. Se trata de un análisis descriptivo
+y no de diagnóstico, por tanto, no aspiramos a explicar el por qué.
+
+### 1.3.1 Medidas y relaciones 
+
+En este apartado emplearemos medidas de resumen de la distribución y las relaciones.
+Nuestra función `RESUMEN` nos ofrece los principales estadísticos para nuestras variables.
+
+Esto puede hacerse con otras funciones como `summary` o `skimr`.
+
+Observamos que las variables tienen una escala dispar, lo cual solucionaremos 
+posteriormente. Además no parecen pertenecer a una normal, por la diferencia 
+entre su media y mediana así como por su asimetría y curtosis. Otra cuestión 
+relevante es que hay máximos y mínimos muy alejados de los cuartiles, lo que 
+sumado a  la diferencia entre media y mediana es indicador de la presencia de 
+outliers.
+
+```{r}
+# resumen estadístico
+datatable(RESUMEN(df),fillContainer=TRUE)
+```
+
+Calculamos las proporción de las clases de nuestra variable objetivo. Están 
+desequilibradas, lo cual puede hacer imprecisos a los clasificadores por clase.
+
+```{r}
+# calculamos probabilidades a priori
+p_priori <- df %>% group_by(X_1) %>%
+    summarise('n_observaciones'=n()) %>%
+    mutate('p_priori'=n_observaciones/sum(n_observaciones)) %>%
+    data.frame()
+
+# mostramos
+datatable(p_priori,fillContainer=TRUE)
+  
+```
+
+Mediante las matrices de covarianzas y correlaciones podemos tratar de entender
+las relaciones entre las variables.
+
+```{r}
+# matriz varianzas - covarianzas
+covarianzas <- df |> select(where(is.numeric)) |> cov() |> round(3)
+datatable(covarianzas, fillContainer=TRUE)
+
+# matriz correlaciones
+correlaciones <- df |> select(where(is.numeric)) |> cor() |> round(3)
+datatable(correlaciones,fillContainer=TRUE)
+```
+
+### 1.3.2 Análisis gráfico.
+
+Mediante el uso de visualizaciones podemos complementar las medidas y lograr una
+mejor comprensión de nuestros datos.
+
+El siguiente código crea un histograma y gráfico de densidad
+para cada una de nuestras variables:
+
+```{r}
+ggplot(gather(df |> select(where(is.numeric)), variable, value), aes(x = value)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 alpha = 0.5, position = "identity",bins=100) + # histogrmas
+  geom_density(alpha = 0.5) + # densidad teorica
+  facet_wrap(~ variable, scales = "free")+
+  theme_bw() # tema
+```
+
+Podemos estudiar cuales se comportan de forma más o menos normal. Colas largas
+podrían indicar outliers, las distribuciones multimodales pueden indicar grupos.
+
+Los gráficos de caja y bigotes muestran información sobre la distribución pero
+de forma simplificada y fácil de analizar. Los puntos fuera de los bigotes 
+(rango intercuantílico) son potenciales outliers.
+
+```{r}
+ggplot(gather(df |> select(where(is.numeric),X_1),
+              variable, value,-X_1), aes(x = X_1, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free")
+```
+
+Una versión más completa de estos son los llamados gráficos de violin, que 
+además, muestran la densidad:
+
+```{r}
+ggplot(gather(df |> select(where(is.numeric),X_1),
+              variable, value,-X_1), aes(x = X_1, y = value)) +
+  geom_violin() +
+  facet_wrap(~ variable, scales = "free")
+```
+
+También podemos ver de forma gráfica las correlaciones entre variables:
+
+```{r}
+corrplot(correlaciones,'ellipse')
+```
+
+## 1.4 Homogenización.
+
+Nuestras variables presentan una escala muy diferente, lo cual puede perjudicar 
+la precisión de los clasificadores, sobre todo aquellos basados en distancias,
+así como la detección de outliers. Además, una similar escala facilita comparaciones.
+
+El método que vamos a utilizar es tipificar nuestros datos, de forma que quedan con
+media 0 y varianza 1. Pero hay otras alternativas como tomar logaritmos o normalizar.
+
+```{r}
+#df_original <- df # si queremos guardar datos originales
+
+#nd_original <- nd # si queremos guardar datos originales
+
+df <- df %>%
+  select_if(is.numeric) %>% # seleccionamos numericas
+  scale() %>% # tipificamos
+  as.data.frame() %>% # convertimos en data frame
+  cbind(df %>% select_if(function(x) !is.numeric(x))) %>% # unimos no numericas
+  select(X_1,everything()) # X_1 primera columna
+
+nd <- nd %>%
+  select_if(is.numeric) %>% # seleccionamos numericas
+  scale() %>% # tipificamos
+  as.data.frame() %>% # convertimos en data frame
+  cbind(nd %>% select_if(function(x) !is.numeric(x))) %>% # unimos no numericas
+  select(X_1,everything()) # X_1 primera columna
+```
+
+# 2) Detección de Anomalías.
+
+El objetivo de este apartado es emplear distintas técnicas para detectar posibles
+outliers. Esto es importante pues la presencia de estos datos anómalos puede 
+perjudicar la estimación de estadísticos, lo que nos puede llevar a una menor 
+precisión.
+
+En primer lugar realizamos unos pasos previos; guardar los datos originales y 
+retirar `X_11` que provoca problemas en algunas técnicas.
+
+```{r}
+# quitamos variables que den problemas
+df <- df %>% select(-X_11)
+
+# creamos data frame con los datos originales
+df_original <- df
+```
+
+## 2.1 Métodos gráficos.
+
+Vamos a realizar un análisis de componentes principales (PCA) para tratar de 
+representar nuestros datos en 2 dimensiones mediante un biplot:
+
+```{r}
+# analisis de componentes principales (PCA)
+pca <- prcomp(df %>% select(where(is.numeric)), scale = TRUE)
+
+# informacion explicada
+summary(pca)
+
+# porcentaje explicado por PC1 y PC2
+summary(pca)[[6]][3,2] * 100
+```
+
+El porcentaje de variabilidad explicada por los dos primeros componentes es muy
+reducida, aun así vamos a realizar el biplot con ánimo de practicar:
+
+```{r}
+# dibujamos biplot
+biplot(pca, cex = 0.7)
+```
+
+Aquellos valores que toman valores muy elevados o combinaciones extrañas son 
+potenciales outliers.
+
+## 2.2 Métodos estadísticos.
+
+En este apartado vamos a emplear métodos que trabajan mediante contrastes de hipótesis.
+
+### 2.2.1 Método univariante de la distancia intercuartílica.
+
+Este método para la detección de outliers univariantes se basa en ver que valores
+se alejan más de un múltiplo de veces sobre la distancia intercuartílica.
+
+Mediante nuestra función `OUTLIERS_IQR` buscamos aquellas observaciones que se
+alejan por encima o por debajo más de 1.5 veces la distancia intercuartílica.
+
+```{r}
+# para una columna: coef=1.5 
+OUTLIERS_IQR(df,2,1.5)
+```
+
+Hemos programado la función `OUTLIERS_IQR_TOTAL` que aplica a todas las columnas
+mediante un loop. La salida es una lista con tantos elementos como variables y 
+que guardan los potenciales outliers univariantes para cada variable.
+
+```{r}
+# para todas las columnas: coef=1.5
+outliers_iqr <- df %>%  OUTLIERS_IQR_TOTAL(1.5)
+```
+
+No aplicamos esta técnica para retirar outliers pues un potencial outlier univariante
+no tiene por qué serlo en una dimensión múltiple ya que puede pertenercer a una
+tendencia o correlación.
+
+```{r}
+# si quisieramos quitar otliers segun la variable 1 de la lista:
+# df[-outliers_iqr[[1]],]
+
+# si quisieramos quitar segun todas las variables:
+# for(i in 1:length(outliers_iqr)){df <- df[-outliers_iqr[[i]],]}
+```
+
+Usando nuestra función `dist_mediana` podemos calcular la observación con mayor
+distancia absoluta a la mediana por variable:
+
+```{r}
+# observacion con mayor distancia a la mediana por variable
+
+df %>% select_if(is.numeric) %>% dist_mediana() %>% datatable()
+```
+
+```{r echo=FALSE,include=FALSE}
+# borramos variables instrumentales
+rm(outliers_iqr)
+```
+
+### 2.2.2. Contrastes de normalidad.
+
+Hay ténicas de detección de outliers, de clasificación y para equilibrar las 
+probabilidades a priori que se basan en la asunción de una distribución normal.
+Por ello, vamos a tratar de contrastar esta asunción mediante el test de
+Shapiro-Wilks cuya hipótesis nula es la existencia de normalidad en una variable.
+
+```{r}
+# Saphiro Test
+
+# Ho Normal
+
+# para una variable
+
+shapiro.test(df[,2])
+
+# para todas las variables por clase
+
+df %>% 
+  group_by(X_1) %>% 
+  select(where(is.numeric)) %>% 
+  summarise_all(list(~ shapiro.test(.)$p.value)) %>% 
+  ungroup()
+```
+
+Contrastamos las variables por grupos porque la ausencia de normalidad puede 
+deberse a la existencia de grupos que se reflejen en una distribución multimodal.
+
+Advertencia: el test de Saphiro-Wilks en R 4.2.2 tiene como límite 5000 observaciones.
+
+### 2.2.3 Contrastes para outliers univariantes.
+
+En este apartado vamos a trabajar con el test de Grubbs cuya Ho es existe un 
+único outlier univariante. Si queremos detectar más de uno, presenta el problema
+del enmascaramiento, los outliers pueden alterar la media y hacer fallar el contraste.
+
+El test de Grubbs es muy intuitivo pues se basa en el valor tipificado que más
+se aleja de la media.
+
+Nuestra función `GRUBBS_TABLA` crea una tabla resumen con los resultados para
+cada variable.
+
+```{r}
+# Ho: No hay outliers
+# H1: Hay un outlier
+
+# para una variable
+grubbs.test(df[,2])
+
+# creamos un data frame con los resultados
+GRUBBS_TABLA(df,0.05)
+
+# para todas las variables por clase
+df %>% 
+  group_by(X_1) %>% 
+  select(where(is.numeric)) %>% 
+  summarise_all(list(~ grubbs.test(.)$p.value)) %>% 
+  ungroup()
+```
+
+Si quisieramos eliminar outliers con este método podríamos usar nuestra función
+`GRUBBS_REMOVER` que emplea `GRUBBS_TABLA` para ver que variables rechazan el test
+y entonces elimina la observación más valor el estadístico de Grubbs.
+
+```{r}
+# eliminar outliers segun test Grubbs una vez
+# df = GRUBBS_REMOVER(df,0.05) 
+```
+
+No lo haremos pues los métodos univariantes obvian las correlaciones y tendencias.
+
+### 2.2.4 Distancia de Mahalanobis.
+
+La distancia de Mahalanobis es un tipo de distancia que tiene en cuenta las 
+correlaciones entre variables, de forma que si un valor está lejos del centroide
+por ser un valor extremo en una correlación, no tiene una distancia de Mahalanobis
+demasiado elevada. De forma visual serían elipses entorno al centroide, al contrario
+que la distancia euclídea donde son círculos.
+
+La distancia de Mahalanobis asume la existencia de una distribución normal
+multivariante, por ello tenemos que contrastar si es cierto.
+
+```{r}
+mvn(df %>% select(where(is.numeric)), mvnTest = "hz")$multivariateNormality
+```
+
+La distancia de Mahalanobis se estima mediante la función `mahalanobis`
+
+```{r}
+maha.F <- df %>% select(where(is.numeric)) %>% # numericas
+  mahalanobis(center = colMeans(.), cov = cov(.)) # centroide y varianzas
+```
+
+La distancia de Mahalanobis estándar se distribuye según una chi-cuadrado de p
+grados de libertad, siendo p el número de variables cuando los datos se distribuyen
+de forma normal. Dado que vamos a contrastar simultáneamente varias observaciones 
+provocamos un FWER, por tanto, debemos corregir el nivel de significación.
+
+`qchisq` calcula el valor que deja probabilidad a la izquierda, por tanto recibe
+como argumento 1-alfa.
+
+```{r}
+# numero de variables numericas
+p <- df %>% select(where(is.numeric)) %>% ncol()
+
+# n de outliers a detectar
+n <- 150
+
+# nivel de significacion
+alfa <- 0.05
+
+# limite para ser outlier
+# chi-cuadrado con correccion de Sidak
+(limite <- qchisq(p = 1-(1-(1-alfa)^(1/n)) , df = p))
+```
+
+Podemos analizar gráficamente las observaciones según su valor de distancia.
+
+```{r}
+# grafico distancia por observacion
+ggplot(data.frame(x = 1:length(df[,1]), y = maha.F), aes(x = x, y = y)) +
+  geom_point(pch = 16, col = "blue") +
+  geom_text(aes(label = x),hjust = 0.5, vjust = -0.5, col = "black") +
+  labs(title = "Outliers") +
+  geom_hline(yintercept = limite, col = "red")
+```
+
+Podemos ver quines superan la distancia límite y cuántos son:
+
+```{r}
+# cuales superan el limite
+which(maha.F>limite) 
+
+# cuantas lo superan
+length(which(maha.F>limite))
+```
+
+Si quisieramos quitar outliers con esta técnica usariamos el siguiente código.
+Recordemos que empleamos una correción del nivel de significación para n outliers.
+Cómo mucho podemos quitar con criterio estadístico esos n.
+
+No lo vamos a ejecutar pues emplearemos la distancia robusta.
+
+```{r echo=TRUE}
+"
+if(length(which(maha.F>limite))>n){ # mas outliers de n solo borramos n
+  df <- df[-order(maha.F, decreasing = TRUE)[1:n],]
+}else{ # menos outliers de n
+  df <- df[-which(maha.F>limite) ,]
+}
+"
+```
+
+### 2.2.5 Distancia de Mahalanobis Robusta.
+
+La distancia de Mahalanobis robusta funciona mejor ante la presencia de outliers
+y la ausencia de normalidad.
+
+```{r}
+# biplot estandar vs robusta
+# puntuaciones PC1 y PC2
+scores <- as.data.frame(pca$x[, 1:2])
+# grafico
+corr.plot(scores[, 1], scores[, 2])
+```
+
+La distancia de Mahalanobis robusta la estimamos utilizando el método del 
+determinante mínimo de covarianza (MCD) 
+
+```{r}
+# estimacion robusta
+maha.F <- df %>% select(where(is.numeric)) %>% 
+  mahalanobis(center = covMcd(.)$center, # centroide
+              cov = covMcd(.)$cov)       # varianzas
+```
+
+Típicamente la distribución de este estadístico es desconocida pero se puede 
+aproximar mediante simulaciones o bootstrap. Por motivos de simplicidad, vamos
+a trabajar (erróneamente) con una chi-cuadrado de p grados de libertad como sucede 
+con la distancia no robusta en caso de normalidad.
+
+Dado que hacemos múltiples contrastes debemos corregir el nivel de significación
+para reducir el FWER.
+
+`qchisq` calcula el valor que deja probabilidad a la izquierda, por tanto recibe
+como argumento 1-alfa.
+
+```{r}
+# numero de variables numericas
+p <- df %>% select(where(is.numeric)) %>% ncol()
+
+# n de outliers a detectar
+n <- 150
+
+# nivel de significacion
+alfa <- 0.05
+
+# limite para ser outlier
+# chi-cuadrado con correccion de Sidak
+(limite <- qchisq(p = 1-(1-(1-alfa)^(1/n)) , df = p))
+```
+
+Aunque los datos no sean normales, las observaciones con una distancia muy 
+extrema son potencialmente outliers, el problema vendría en caso de distancia
+moderada.
+
+Gráficamente:
+
+```{r}
+# grafico distancia por observacion
+ggplot(data.frame(x = 1:length(df[,1]), y = maha.F), aes(x = x, y = y)) +
+  geom_point(pch = 16, col = "blue") +
+  geom_text(aes(label = x),hjust = 0.5, vjust = -0.5, col = "black") +
+  labs(title = "Outliers") +
+  geom_hline(yintercept = limite, col = "red")
+```
+
+Podemos estudiar quiénes rebasan el límite y cuántos son:
+
+```{r}
+# cuales superan el limite
+which(maha.F>limite)
+
+# cuantas lo superan
+length(which(maha.F>limite))
+```
+
+Para retirar outliers con este método empleamos el siguiente código.
+Recordemos que empleamos una correción del nivel de significación para n outliers.
+Cómo mucho podemos quitar con criterio estadístico esos n.
+
+```{r echo=TRUE}
+# Retirar outliers
+"
+if(length(which(maha.F>limite))>n){ # mas outliers de n solo borramos n
+  df <- df[-order(maha.F, decreasing = TRUE)[1:n],]
+}else{ # menos outliers de n borramos todos
+  df <- df[-which(maha.F>limite) ,]
+}
+"
+```
+
+```{r echo=TRUE,include=FALSE}
+# borramos objetos instrumentales
+rm(maha.F,p,alfa,n,pca,scores,limite)
+```
+
+## 2.3 Métodos basados en distancia.
+
+En este apartado vamos a emplear el método LOF (Local Outlier Factor) que se basa
+en comparar relativamente la distancia de una observación a sus K vecinos más 
+cercanos con la media de distancias existente entre estos. De forma que una 
+observación obtiene una puntuación elevada no solo por estar muy alejada sino 
+también si se comporta de forma diferente a sus vecinos.
+
+Utilizamos como heurística para seleccionar K la raíz del número de observaciones.
+
+```{r}
+lof_scores <- df %>%
+  select(where(is.numeric)) %>%
+  LOF(round(sqrt(dim(df)[1]),0))
+```
+
+El siguiente gráfico muestra la puntuación LOF de las observaciones ordenadas
+de forma ascendente, no es muy útil cuando hay muchas observaciones.
+
+```{r}
+# grafico puntuaciones
+lof_scores %>%
+  sort() %>%
+  data.frame(score = .) %>%
+  ggplot(aes(x = seq_along(score), y = score)) +
+  geom_line() +
+  labs(x = "Observaciones ordenadas por LOF score", y = "LOF score") +
+  theme_bw()
+```
+
+Para remover outliers vamos a seleccionar solo el 5% con mayor LOF, ya que no 
+tiene sentido que los outliers sean una proporción muy elevada, pues en ese caso
+ya no serían anómalos.
+
+El código agrega a los datos una columna de LOF score, los ordena de forma 
+descendiente según LOF, retira los n primeros y quita la nueva columna.
+
+```{r}
+# borramos un 5%
+n <- round(0.05*dim(df)[1],0)
+
+df <- df %>% 
+  mutate(lof_score = LOF(select_if(., is.numeric), k = round(sqrt(n()),0))) %>%
+  arrange(desc(lof_score)) %>%
+  slice(-(1:n)) %>%
+  select(-lof_score)
+```
+
+```{r echo=FALSE, include=FALSE}
+# eliminamos variables instrumentales
+rm(lof_scores)
+```
+
+Hemos ordenado los datos y eso podría alterar algunas técnicas, por tanto los
+reordenamos aleatoriamente.
+
+```{r}
+# remezclamos los datos
+df <- df[sample(1:dim(df)[1],dim(df)[1]),]
+```
+
+## 2.4 Métodos basados en clúster.
+
+Vamos a trabajar con dos métodos, la distancia al centroide y la distancia al
+medoide.
+
+En primer lugar, necestimos un análisis clúster previo, nosotros lo vamos a hacer
+a modo de ejemplo con K-Medias, pero podrían utilizarse otros métodos. En consecuencia,
+las funciones que hemos programado se basan en la salida de este método y podrían
+no funcionar con otras librerías.
+
+Mediante el estadístico de Hartigan seleccionamos el número de clústers:
+
+```{r}
+# seleccionamos k con Hartigans
+df %>% 
+  select(where(is.numeric)) %>% # numericas
+  FitKMeans(max.clusters=25,
+             nstart=10, seed=2023,iter.max=30) %>% # de 2 a 25 clusters
+  as.data.frame() %>%
+  mutate(AddCluster = FALSE) %>%
+  PlotHartigan() # graficamos Hartigan's
+```
+
+El número de clúster para el que se reduce significativamente la pendiente es
+el deseado.
+
+Hacemos el análisis clúster y observamos sus centroides:
+
+```{r}
+# cluster por k means
+set.seed(2023) # semilla aleatoria
+
+km_clusters <- df %>% 
+  select(where(is.numeric)) %>% kmeans(centers = 5 , nstart = 50)
+
+datatable(data.frame(km_clusters$centers),fillContainer=TRUE) # centroides
+```
+
+### 2.4.1 Distancia al centroide
+
+Mediante nuestra función `OUTLIERS_KMEDIAS` podemos buscar las n observaciones
+con mayor distancia al centroide.
+
+```{r}
+# deteccion de outliers
+OUTLIERS_KMEDIAS(df,km_clusters,n)
+```
+
+Si quisieramos eliminarlos usaríamos el siguiente código:
+
+```{r}
+# eliminar outliers
+# borramos un 5%
+n <- round(0.05*dim(df)[1],0)
+
+# df <- df[-OUTLIERS_KMEDIAS(df,km_clusters,n),]
+```
+
+```{r echo=FALSE, include=TRUE}
+# eliminamos variables instrumentales
+rm(km_clusters)
+```
+
+### 2.4.2. Distancia al medoide
+
+Establecemos los parámetros:
+
+```{r}
+# deteccion de outliers
+n <- round(0.05*dim(df)[1],0) # n a detectar
+k <- 5 # numero de clusters
+```
+
+Nuestra función `OUTLIERS_KMEDOIDES` detecta las n observaciones más alejadas a
+sus medoides, para obtener los medoides utiliza la función `pam`.
+
+```{r}
+OUTLIERS_KMEDOIDES(df,n,k)
+```
+
+Si quisieramos eliminar outliers lo haríamos de la siguiente manera.
+
+```{r}
+# eliminar outliers
+# df <- df[-OUTLIERS_KMEDOIDES(df,n,k),]
+```
+
+```{r echo=FALSE, include=FALSE}
+# eliminamos variables instrumentales
+rm(k,n)
+```
+
+## 2.5 Análisis de las anomalias
+
+En primer lugar creamos un data frame con los outliers mediante `anti_join` y nuestra columna `ID`
+
+```{r}
+# creamos un data frame con los outliers
+# observaciones en df_original que no estan en df
+df_outliers <- anti_join(df_original, df, by = "ID")
+
+# los mostramos
+datatable(df_outliers,fillContainer=TRUE)
+
+```
+
+Además, retiramos la columna ID y tipificamos de nuevo las variables. Cómo llegados
+a este punto ese código es repetitivo, queda oculto.
+
+```{r echo=TRUE,include=FALSE}
+# ya no necesitamos ID
+df<-df %>% select(-ID)
+df_original<-df_original %>% select(-ID)
+df_outliers<-df_outliers%>% select(-ID)
+nd<-nd %>% select(-ID)
+# tipificamos
+df <- df %>%
+  select_if(is.numeric) %>% # seleccionamos numericas
+  scale() %>% # tipificamos
+  as.data.frame() %>% # convertimos en data frame
+  cbind(df %>% select_if(function(x) !is.numeric(x))) %>% # unimos no numericas
+  select(X_1,everything()) # X_1 primera columna
+
+df_outliers <- df_outliers %>%
+  select_if(is.numeric) %>% # seleccionamos numericas
+  scale() %>% # tipificamos
+  as.data.frame() %>% # convertimos en data frame
+  cbind(df_outliers %>% select_if(function(x) !is.numeric(x))) %>% # unimos no numericas
+  select(X_1,everything()) # X_1 primera columna
+```
+
+Una métrica importante es la proporción de outliers:
+
+```{r}
+# proporcion de outliers
+dim(df_outliers)[1]/dim(df_original)[1]
+```
+
+Además podemos realizar estadística descriptiva sobre nuestros outliers.
+
+Mediante `skim` calculamos las principales estadísticas:
+
+```{r}
+skim(df_outliers)
+```
+
+Lo comparamos con los datos principales:
+
+```{r}
+skim(df)
+```
+
+Podemos estudiar gráficamente la distribución de los outliers mediante un
+histograma y gráfico de densidad:
+
+```{r}
+# gather para formato largo requerido
+# seleccionamos solo numericas
+ggplot(gather(df_outliers |> select(where(is.numeric)), variable, value), aes(x = value)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 alpha = 0.5, position = "identity",bins=100) + # histogrmas
+  geom_density(alpha = 0.5) + # densidad teorica
+  facet_wrap(~ variable, scales = "free")+
+  theme_bw() # tema
+```
+
+A su vez, lo comparamos con los datos principales.
+
+```{r}
+# gather para formato largo requerido
+# seleccionamos solo numericas
+ggplot(gather(df |> select(where(is.numeric)), variable, value), aes(x = value)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 alpha = 0.5, position = "identity",bins=100) + # histogrmas
+  geom_density(alpha = 0.5) + # densidad teorica
+  facet_wrap(~ variable, scales = "free")+
+  theme_bw() # tema
+```
+
+Cuanto más diferentes sean las distribuciones, más anómalos son los datos.
+
+Podemos comparar mediante un boxplot los outliers y normales:
+
+```{r}
+# Unir los datos y agregar la columna "dataset"
+df_combined <- bind_rows(
+  df_outliers %>%
+    mutate(dataset = "outliers"),
+  df %>%
+    mutate(dataset = "normal")
+)
+
+# grafico
+ggplot(df_combined %>% pivot_longer(cols = where(is.numeric),
+                               names_to = "variable", values_to = "value"),
+  aes(x = variable, y = value, color = dataset)) + geom_boxplot()
+
+# borrar datos para grafico
+rm(df_combined)
+```
+
+# 3) Equilibrio en probabilidades a priori
+
+Nuestras probabilidades a priori están desequilibradas:
+
+```{r}
+datatable(p_priori,fillContainer=TRUE)
+```
+
+Y esto puede perjudicar la precisión de los clasificadores por clase, en 
+consecuencia, el objetivo de los siguientes apartados es solucionar este problema.
+
+Definimos un objeto con nuestra clase minoritaria para ir usandolo:
+
+```{r}
+# clase minoritaria
+clase <- 'negativo'
+```
+
+## 3.1 Reducción de observaciones
+
+En este apartado mostramos métodos que equilibran las probabilidades mediante
+reducir las observaciones de clase mayoritaria.
+
+### 3.1.1 Vínculos de Tomek
+
+El algoritmo de los vínculos de Tomek consiste en buscar la observación de clase
+mayoritaria más cercana a cada una de las observaciones de clase minoritaria y
+retirarlas, limpiando así el espacio en que se encuentran las minoritarias.
+
+Este algoritmo lo hemos implementado en nuestra función `tomek`:
+
+```{r}
+vinculos<-df %>%
+  select(X_1,where(is.numeric)) %>%
+  tomek('X_1',clase) %>%
+  mutate_if(is.character, as.numeric)
+```
+
+No lo empleamos pues preferimos no retirar observaciones, pero se haría con el 
+siguiente código:
+
+```{r}
+# eliminamos observaciones mayoritarias
+# df <- df[-vinculos$majority_index,]
+```
+
+```{r echo=FALSE,include=FALSE}
+rm(vinculos)
+```
+
+### 3.1.2 Eliminación aleatoria.
+
+Una alternativa consiste en eliminar de forma aleatoria observaciones mayoritarias,
+esto podemos hacerlo con `sample`.
+
+Nuestra función `n_deseada` calcula el número de observaciones a retirar o crear
+para lograr las probabilidades a priori deseadas:
+
+```{r}
+# n deseada a retirar
+n <- n_deseada(c(0.6,0.4),c(dim(df %>% filter(X_1!=clase))[1],
+                       dim(df %>% filter(X_1==clase))[1]),'submuestreo')
+```
+
+Recogemos n observaciones mayoritarias aleatorias de la siguiente manera:
+
+```{r}
+# semilla aleatoria
+set.seed(1998)
+
+# indices positivos aleatorios
+df_positivos <- sample(which(df$X_1!=clase),n)
+```
+
+Para retirarlas se hace de esta manera:
+
+```{r}
+# retiramos observaciones
+# df <- df[-df_positivos,]
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos variables instrumentales
+rm(df_positivos)
+```
+
+## 3.2 Generación de observaciones.
+
+Los métodos basados en generar observaciones, como su nombre indica, se basan en
+crear observaciones sintéticas.
+
+Calculamos el número de observaciones a generar para lograr unas probabilidades de
+0.6 mayoritarias y 0.4 minoritarias con nuestra función `n_deseada`.
+
+```{r}
+# numero de observaciones necesarias
+n <- n_deseada(c(0.6,0.4),c(dim(df %>% filter(X_1!=clase))[1],
+                            dim(df %>% filter(X_1==clase))[1]),'sobremuestreo')
+```
+
+### 3.2.1 Datos normales.
+
+Si nuestras variables siguen una distribución normal puede ser una buena idea 
+generar datos normales aleatorios.
+
+Nuestra función `GENERADOR_RNORM` calcula la media y desviación poblacional 
+para cada variable y con un loop emplea `rnorm` para generar `n` datos normales
+aleatorios para cada variable.
+
+```{r}
+# si las variables pasan test de normalidad
+# generamos datos 
+
+df_negativos <- df %>%
+  filter(X_1==clase) %>% # filtramos por clase
+  GENERADOR_RNORM(n) %>% # generamos n datos normales
+  mutate(X_1=clase) %>%  # creamos variable clase
+  select(X_1,everything()) # reordenamos
+```
+
+Solo sirve con variables numéricas, podríamos unir los datos de la siguiente 
+forma:
+
+```{r}
+# unimos por filas
+# solo sirve para variables numericas
+# df <- df %>% select(X_1,where(is.numeric)) %>% rbind(df_negativos)
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos variables instrumentales
+rm(df_negativos)
+```
+
+### 3.2.2 Bootstrap
+
+Una forma de generar datos es tomar muestras aleatorias con remplazamiento de 
+nuestra clase minoritaria.
+
+```{r}
+# creamos muestra de size n de clase minoritaria
+
+# semilla aleatoria
+set.seed(1998)
+
+# replica bootstrap
+df_negativos<-df %>% filter(X_1 == clase) %>%
+  sample_n(size = n, replace = TRUE)
+```
+
+Para unir los datos hacemos lo siguiente:
+
+```{r}
+df <- df %>% rbind(df_negativos)
+```
+
+Comprobamos que nuestras probabilidades a priori son 0.6 y 0.4:
+
+```{r}
+# calculamos probabilidades a priori
+p_priori <- df %>% group_by(X_1) %>%
+    summarise('n_observaciones'=n()) %>%
+    mutate('p_priori'=n_observaciones/sum(n_observaciones)) %>%
+    data.frame()
+# mostramos
+datatable(p_priori,fillContainer=TRUE)
+```
+
+```{r echo=TRUE,echo=FALSE}
+# eliminamos variables instrumentales
+rm(df_negativos)
+```
+
+### 3.2.3 SMOTE
+
+El algoritmo SMOTE consiste en buscar los K vecinos más cercanos a una observación
+minoritaria y generar un dato sintético mediante una combinación lineal aleatoria
+de dichos vecinos.
+
+Para el valor de K tomamos la heurística de la raíz del número de observaciones.
+
+```{r}
+# k = sqrt(n observaciones minoritarias)
+K<-round(sqrt(dim(df %>% filter(X_1==clase))[1]))
+```
+
+Creamos datos mediante SMOTE:
+
+```{r warning = FALSE}
+# semilla aleatoria
+set.seed(1998)
+
+# generamos datos mediante SMOTE
+df_negativos <- SMOTE(df %>% select(where(is.numeric)),
+                      df$X_1,K=K )$syn_data %>% 
+  rename(X_1=class) %>% select(X_1,everything())
+```
+
+Solo sirve para variables numéricas.
+
+Si quisieramos usar este método unimos los valores de la siguiente manera:
+
+```{r}
+# unimos por filas
+# solo sirve para variables numericas
+
+# df <- df %>% select(X_1,where(is.numeric)) %>% rbind(df_negativos)
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos variables instrumentales
+rm(df_negativos,K)
+```
+
+## 3.3 Preparación previa.
+
+Tras generar las probabilidades a priori tenemos que hacer algunos pasos previos
+a la validación cruzada. Que son tipificar de nuevo y volver a mezclar los datos.
+Como ya hemos usado este código, queda oculto.
+
+```{r echo=FALSE,include=FALSE}
+# tipificamos de nuevo
+df <- df %>%
+  select_if(is.numeric) %>% # seleccionamos numericas
+  scale() %>% # tipificamos
+  as.data.frame() %>% # convertimos en data frame
+  cbind(df %>% select_if(function(x) !is.numeric(x))) %>% # unimos no numericas
+  select(X_1,everything()) # X_1 primera columna
+
+# remezclamos los datos
+df <- df[sample(1:dim(df)[1],dim(df)[1]),]
+```
+
+# 4) Selección mejor modelo enfoque train/test
+
+## 4.1. Preparación previa.
+
+En este apartado vamos a realizar los pasos previos necesarios a la seleción del
+mejor modelo mediante el enfoque train/test.
+
+En primer lugar separamos los datos en un conjunto de entrenamiento para alimentar
+la estimación de los modelos y en un conjunto de test para validar su capacidad de
+generalización fuera de los datos de entrenamiento.
+
+```{r}
+# numero de observaciones
+n <- dim(df)[1] 
+
+# dividimos muestra en train y test
+
+# fijamos semilla de aleatoriedad
+set.seed(102) 
+
+#Train 70% aleatorio
+train = sample(1:n, 0.70*n,replace = FALSE) 
+```
+
+Hemos creado un índice con el que separar los datos:
+
+```{r include=FALSE}
+# datos de entrenamiento
+df[train,] 
+
+# datos de test
+df[-train,] 
+```
+
+Guardamos las clases reales:
+
+```{r}
+# clase real en test
+test.clase <- df[-train,]$X_1
+
+# clase real en entrenamiento
+train.clase <- df[train,]$X_1
+```
+
+Creamos una fórmula con las variables que vamos a emplear:
+
+```{r}
+# formula 
+formula <- formula(X_1~.)
+```
+
+Nosotros utilizaremos todas las variables, pero lo idóneo sería hacer una selección
+de las mismas por ejemplo mediante el criterio de Akaike de forma automática o 
+seleccionandolas de forma manual empleando contrastes o conocimientos teóricos.
+
+## 4.2. Estimación de los modelos y su precisión.
+
+En este apartado vamos a estimar los modelos y medir su precisión, dado que el 
+código puede ser repetitivo, solo lo vamos a incluir para el primer modelo.
+
+### 4.2.1. Naive Bayes
+
+El clasificador bayesiano ingenuo se fundamenta en el teorema de Bayes para 
+obtener la probabilidad a posteriori de pertenencer a la clase usando la 
+distribución de frecuencias de las variables por clase.
+
+El modelo se estima de la siguiente manera:
+
+```{r}
+# estimacion del modelo
+nb.fit <- naiveBayes(formula , data = df ,subset = train)
+```
+
+Si dispusieramos de un número reducido de variables podríamos hacer un gráfico
+de la siguiente manera
+
+```{r}
+# grafico
+# partimat(formula, method = "naiveBayes",df[train,])
+```
+
+Para predecir en el conjunto de entrenamiento y test hacemos lo siguiente:
+
+```{r}
+# Prediccion
+
+# train
+nb.clase.train <- predict(nb.fit , df[train,]) # clase
+
+# test
+nb.clase.test <- predict(nb.fit , df[-train,]) # clase
+```
+
+Con nuestra función `PRECISION` podemos medir el error:
+
+```{r}
+# train
+PRECISION(train.clase, nb.clase.train)
+
+# test
+PRECISION(test.clase, nb.clase.test)
+```
+
+En adelante trabajaremos con `confusionMatrix` del paquete `caret` por ser 
+más eficiente y completa.
+
+A continuación guardamos las medidas de precisión:
+
+```{r}
+# train
+
+# guardamos datos
+nb.train.precision <- confusionMatrix(nb.clase.train ,train.clase)$overall[1]
+nb.train.kappa<- confusionMatrix(nb.clase.train ,train.clase)$overall[2]
+nb.train.sensibilidad <- confusionMatrix(nb.clase.train ,train.clase)$byClass[1]
+nb.train.especificidad<- confusionMatrix(nb.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# guardamos datos
+nb.test.precision <- confusionMatrix(nb.clase.test ,test.clase)$overall[1]
+nb.test.kappa<- confusionMatrix(nb.clase.test ,test.clase)$overall[2]
+nb.test.sensibilidad <- confusionMatrix(nb.clase.test ,test.clase)$byClass[1]
+nb.test.especificidad<- confusionMatrix(nb.clase.test ,test.clase)$byClass[2]
+```
+
+Esto nos permite crear una tabla para almacenar las medidas de precisión:
+
+```{r}
+nb.medidas <- data.frame(
+  Modelo = rep("Naive Bayes", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(nb.train.precision, nb.test.precision),
+  Kappa = c(nb.train.kappa, nb.test.kappa),
+  Sensibilidad = c(nb.train.sensibilidad, nb.test.sensibilidad),
+  Especificidad = c(nb.train.especificidad, nb.test.especificidad),
+  Llamada = c('nb.fit','nb.fit')
+)
+
+# la mostramos
+datatable(nb.medidas,fillContainer=TRUE)
+```
+
+La columna `Llamada` nos permitirá más adelante seleccionar el mejor modelo.
+
+```{r echo=FALSE, include=FALSE}
+# eliminamos las variables instrumentales
+rm(nb.clase.train,nb.train.precision,
+   nb.train.kappa, nb.train.sensibilidad, nb.train.especificidad)
+rm(nb.clase.test,nb.test.precision,
+   nb.test.kappa, nb.test.sensibilidad, nb.test.especificidad)
+```
+
+### 4.2.2 K Nearest Neighbors KNN
+
+El algoritmo KNN busca los K vecinos más cercanos a una observación y asigna
+la clase mayoritaria entre ellos.
+
+El modelo se estima con la función `train.kknn`
+
+```{r}
+# heuristica de mejor K
+K <- round(sqrt(dim(df)[1]))
+
+# buscamos como mucho hasta el doble de K
+knn.fit<-train.kknn(formula, data = df[train,], kmax = 2*K)
+# usar K -> quitamos kmax y ponemos ks=K
+
+# mejor K
+knn.fit$best.parameters[2]
+```
+
+De nuevo, predecimos y calculamos la precisión del modelo:
+```{r echo=FALSE,include=FALSE}
+# Prediccion
+
+# train
+
+knn.clase.train <- predict(knn.fit , df[train,]) # clase
+
+# test
+
+knn.clase.test <- predict(knn.fit , df[-train,]) # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(knn.clase.train ,train.clase)
+
+# guardamos datos
+knn.train.precision <- confusionMatrix(knn.clase.train ,train.clase)$overall[1]
+knn.train.kappa<- confusionMatrix(knn.clase.train ,train.clase)$overall[2]
+knn.train.sensibilidad <- confusionMatrix(knn.clase.train ,train.clase)$byClass[1]
+knn.train.especificidad<- confusionMatrix(knn.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(knn.clase.test ,test.clase)
+
+# guardamos datos
+knn.test.precision <- confusionMatrix(knn.clase.test ,test.clase)$overall[1]
+knn.test.kappa<- confusionMatrix(knn.clase.test ,test.clase)$overall[2]
+knn.test.sensibilidad <- confusionMatrix(knn.clase.test ,test.clase)$byClass[1]
+knn.test.especificidad<- confusionMatrix(knn.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+knn.medidas <- data.frame(
+  Modelo = rep("KNN", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(knn.train.precision, knn.test.precision),
+  Kappa = c(knn.train.kappa, knn.test.kappa),
+  Sensibilidad = c(knn.train.sensibilidad, knn.test.sensibilidad),
+  Especificidad = c(knn.train.especificidad, knn.test.especificidad),
+  Llamada = c('knn.fit','knn.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(knn.medidas,fillContainer=TRUE)
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos las variables instrumentales
+rm(knn.clase.train,knn.train.precision,
+   knn.train.kappa, knn.train.sensibilidad, knn.train.especificidad)
+rm(knn.clase.test,knn.test.precision,
+   knn.test.kappa, knn.test.sensibilidad, knn.test.especificidad)
+```
+
+### 4.2.3 Clasificación logística.
+
+La clasificación logística estima las probabilidades a posteriori con una función
+logística y a partir de un umbral (tradicionalmente 0.5) clasifica. Se emplea 
+habitualmente en problemas dicotómicos, pero su versión multinomial se puede emplear
+en problemas con más de dos clases.
+
+La estimación la hacemos con `train` o `multinom` según el caso.
+
+```{r}
+# estimacion
+log.fit <- train(formula, data = df[train,],
+                 method = "glm", family = "binomial")
+
+# para clasificacion no binaria
+# log.fit <- multinom(formula , family = binomial, data = df, subset=train)
+```
+
+Podemos estudiar la importancia de las variables:
+
+```{r}
+# importancia variables
+summary(log.fit)$coefficients %>%
+  data.frame() %>% arrange(Estimate) %>% 
+  datatable(fillContainer=TRUE)
+```
+
+De nuevo, predecimos y calculamos la precisión:
+
+```{r echo=FALSE,include=FALSE}
+# Prediccion
+
+# train
+
+log.clase.train <- predict(log.fit, df[train,]) # clase
+
+# test
+
+log.clase.test <- predict(log.fit, df[-train,]) # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(log.clase.train ,train.clase)
+
+# guardamos datos
+log.train.precision <- confusionMatrix(log.clase.train ,train.clase)$overall[1]
+log.train.kappa<- confusionMatrix(log.clase.train ,train.clase)$overall[2]
+log.train.sensibilidad <- confusionMatrix(log.clase.train ,train.clase)$byClass[1]
+log.train.especificidad<- confusionMatrix(log.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(log.clase.test ,test.clase)
+
+# guardamos datos
+log.test.precision <- confusionMatrix(log.clase.test ,test.clase)$overall[1]
+log.test.kappa<- confusionMatrix(log.clase.test ,test.clase)$overall[2]
+log.test.sensibilidad <- confusionMatrix(log.clase.test ,test.clase)$byClass[1]
+log.test.especificidad<- confusionMatrix(log.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+log.medidas <- data.frame(
+  Modelo = rep("Logistica", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(log.train.precision, log.test.precision),
+  Kappa = c(log.train.kappa, log.test.kappa),
+  Sensibilidad = c(log.train.sensibilidad, log.test.sensibilidad),
+  Especificidad = c(log.train.especificidad, log.test.especificidad),
+  Llamada = c('log.fit','log.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(log.medidas,fillContainer = TRUE)
+```
+
+
+### 4.2.4 Analisis Discriminante Lineal (LDA)
+
+El LDA trata de buscar la combinación de funciones lineales que mejor discriminan
+los datos basandose en el teorema de Bayes.
+
+La estimación se hace con la función `lda`
+
+```{r}
+# estimacion
+lda.fit <- lda(formula , data = df , subset = train)
+```
+
+Si tuvieramos pocas variables podríamos representar gráficamente:
+
+```{r}
+# partimat(formula, method = "lda",df[train,])
+```
+
+Podemos ver la clase que se asigna según la puntuación:
+
+```{r}
+# Grafico
+plot(lda.fit)
+```
+
+También, con valores tipificados podemos estudiar la importancia de las variables
+
+```{r}
+# importancia variables
+as.data.frame(abs(lda.fit$scaling)) %>%
+  arrange(desc(LD1)) %>% datatable(fillContainer=TRUE)
+```
+
+De nuevo predecimos y calculamos la precisión:
+
+```{r echo=FALSE,include=FALSE}
+# Prediccion
+
+# train
+
+lda.clase.train <- predict(lda.fit , df[train,])$class # clase
+
+# test
+
+lda.clase.test <- predict(lda.fit , df[-train,])$class # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(lda.clase.train ,train.clase)
+
+# guardamos datos
+lda.train.precision <- confusionMatrix(lda.clase.train ,train.clase)$overall[1]
+lda.train.kappa<- confusionMatrix(lda.clase.train ,train.clase)$overall[2]
+lda.train.sensibilidad <- confusionMatrix(lda.clase.train ,train.clase)$byClass[1]
+lda.train.especificidad<- confusionMatrix(lda.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(lda.clase.test ,test.clase)
+
+# guardamos datos
+lda.test.precision <- confusionMatrix(lda.clase.test ,test.clase)$overall[1]
+lda.test.kappa<- confusionMatrix(lda.clase.test ,test.clase)$overall[2]
+lda.test.sensibilidad <- confusionMatrix(lda.clase.test ,test.clase)$byClass[1]
+lda.test.especificidad<- confusionMatrix(lda.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+lda.medidas <- data.frame(
+  Modelo = rep("LDA", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(lda.train.precision, lda.test.precision),
+  Kappa = c(lda.train.kappa, lda.test.kappa),
+  Sensibilidad = c(lda.train.sensibilidad, lda.test.sensibilidad),
+  Especificidad = c(lda.train.especificidad, lda.test.especificidad),
+  Llamada = c('lda.fit','lda.fit')
+)
+
+```
+
+```{r echo=FALSE}
+datatable(lda.medidas,fillContainer = TRUE)
+```
+
+Otras medidas de precisión importantes en LDA son la Lambda de Wilks y la correlación
+canónica. Estas se obtienen con `manova`.
+
+```{r}
+#Lambda de Wilks
+
+df.num = df %>% 
+  select_if(is.numeric) %>% 
+  as.matrix() #solo numericas
+
+df.manova<-manova(df.num~df$X_1)
+
+(df.wilks<-summary(df.manova, test="Wilks"))
+
+# con autovalores
+
+1/(1+df.wilks$Eigenvalues[1]) 
+
+# correlacion canonica. eta^2
+
+(eta2<- df.wilks$Eigenvalues[1]/(1+ df.wilks$Eigenvalues[1]))
+
+(corr.canonica<-sqrt(eta2))
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos las variables instrumentales
+rm(df.num,df.manova,df.wilks,eta2,corr.canonica)
+rm(lda.clase.train,lda.train.precision,
+   lda.train.kappa, lda.train.sensibilidad, lda.train.especificidad)
+rm(lda.clase.test,lda.test.precision,
+   lda.test.kappa, lda.test.sensibilidad, lda.test.especificidad)
+```
+
+### 4.2.5 Analisis Discriminante Cuadratico (QDA)
+
+El QDA trata de buscar la combinación de funciones cuadráticas que mejor discriminan
+los datos basandose en el teorema de Bayes.
+
+La estimación se hace con la función `qda`
+
+```{r}
+# estimacion
+qda.fit <- qda(formula , data = df , subset = train)
+```
+
+Si tuvieramos pocas variables podríamos representar:
+
+```{r}
+# grafico
+# partimat(formula, method = "qda",df[train,])
+```
+
+De nuevo predecimos y calculamos la precisión:
+
+```{r echo=FALSE, include=FALSE}
+# Prediccion
+
+# train
+
+qda.clase.train <- predict(qda.fit , df[train,])$class # clase
+
+# test
+
+qda.clase.test <- predict(qda.fit , df[-train,])$class # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(qda.clase.train ,train.clase)
+
+# guardamos datos
+qda.train.precision <- confusionMatrix(qda.clase.train ,train.clase)$overall[1]
+qda.train.kappa<- confusionMatrix(qda.clase.train ,train.clase)$overall[2]
+qda.train.sensibilidad <- confusionMatrix(qda.clase.train ,train.clase)$byClass[1]
+qda.train.especificidad<- confusionMatrix(qda.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(qda.clase.test ,test.clase)
+
+# guardamos datos
+qda.test.precision <- confusionMatrix(qda.clase.test ,test.clase)$overall[1]
+qda.test.kappa<- confusionMatrix(qda.clase.test ,test.clase)$overall[2]
+qda.test.sensibilidad <- confusionMatrix(qda.clase.test ,test.clase)$byClass[1]
+qda.test.especificidad<- confusionMatrix(qda.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+qda.medidas <- data.frame(
+  Modelo = rep("QDA", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(qda.train.precision, qda.test.precision),
+  Kappa = c(qda.train.kappa, qda.test.kappa),
+  Sensibilidad = c(qda.train.sensibilidad, qda.test.sensibilidad),
+  Especificidad = c(qda.train.especificidad, qda.test.especificidad),
+  Llamada = c('qda.fit','qda.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(qda.medidas,fillContainer = TRUE)
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos las variables instrumentales
+rm(df.num,df.manova,df.wilks,eta2,corr.canonica)
+rm(qda.clase.train,qda.train.precision,
+   qda.train.kappa, qda.train.sensibilidad, qda.train.especificidad)
+rm(qda.clase.test,qda.test.precision,
+   qda.test.kappa, qda.test.sensibilidad, qda.test.especificidad)
+```
+
+### 4.2.6 Árbol de clasificación
+
+El árbol de clasificación es un algoritmo voraz que calcula todas las particiones
+posibles en todas las variables y selecciona aquella que minimiza la variación
+de una medida de desorden como la función de entropía o el coeficiente de Gini, 
+acto seguido reitera hasta que clasifica a la perfección los datos de entrenamiento
+o alcanza un criterio de parada.
+
+Lo estimamos con `rpart`, en primer lugar un árbol completo:
+
+```{r}
+# estimacion arbol sobreajustado
+tree.fit <- rpart(formula, data=df, subset=train,
+                     method="class", parms=list(split="information"),
+                     control=rpart.control(cp=0.001,xval=30,
+                                           maxdepth=10,minsplit=2,minbucket=1))
+
+```
+
+Podemos estudiar la importancia de las variables:
+
+```{r}
+# importancia de las variables
+tree.fit$variable.importance %>% data.frame() %>% datatable(fillContainer = TRUE)
+```
+
+Mediante el gráfico de coste/complejidad podemos decidir como podar el árbol:
+
+```{r}
+# error nodos vs coste complejidad
+plotcp(tree.fit)
+# podado manual maxdepth en base a plotcp
+```
+
+Nosotros vamos a podarlo con `autoprune` de la librería `adabag`.
+
+```{r}
+# podado automatico
+tree.fit <- autoprune(formula=formula, data=df, subset=train)
+```
+
+Podemos representarlo gráficamente, ponemos un ejemplo con 3 nodos por motivos
+de espacio:
+
+```{r warning = FALSE, echo=FALSE}
+# grafico
+fancyRpartPlot(rpart(formula, data=df, subset=train,
+                     method="class", parms=list(split="information"),
+                     control=rpart.control(cp=0.001,xval=30,
+                                           maxdepth=3,minsplit=2,minbucket=1)), digits = 2, main="Árbol de clasificación", tweak=1)
+```
+
+Si tiene muchos nodos puede ser un poco contraintuitivo.
+
+Podemos ver gráficamente la importancia de las variables:
+
+```{r}
+# tabla importancia
+
+Importance <- data.frame(names(tree.fit$variable.importance), tree.fit$variable.importance,
+                         prop.table(tree.fit$variable.importance)*100)
+
+names(Importance) <- c("variable","importance","percent")
+
+Importance$variable <- as.factor(Importance$variable)
+
+# graficos importancia
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=importance)) + 
+  labs(x="Variable",y= "Importancia") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  #ggtitle("Importancia de las variables en RPART") +
+  facet_wrap(~"Importancia de las variables en RPART") +
+  coord_flip()
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=percent)) + 
+  labs(x="Variable",y= "Importancia (%)") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  #ggtitle("Importancia de las variables en RPART") +
+  facet_wrap(~"Importancia de las variables en RPART") +
+  coord_flip()
+
+```
+
+Como acostumbramos, predecimos y calculamos las medidas de precisión:
+
+```{r echo=FALSE, include=FALSE}
+
+# Prediccion
+
+# train
+
+tree.clase.train <- predict(tree.fit , df[train,],type="class") # clase
+
+# test
+
+tree.clase.test <- predict(tree.fit , df[-train,],type="class") # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(tree.clase.train ,train.clase)
+
+# guardamos datos
+tree.train.precision <- confusionMatrix(tree.clase.train ,train.clase)$overall[1]
+tree.train.kappa<- confusionMatrix(tree.clase.train ,train.clase)$overall[2]
+tree.train.sensibilidad <- confusionMatrix(tree.clase.train ,train.clase)$byClass[1]
+tree.train.especificidad<- confusionMatrix(tree.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(tree.clase.test ,test.clase)
+
+# guardamos datos
+tree.test.precision <- confusionMatrix(tree.clase.test ,test.clase)$overall[1]
+tree.test.kappa<- confusionMatrix(tree.clase.test ,test.clase)$overall[2]
+tree.test.sensibilidad <- confusionMatrix(tree.clase.test ,test.clase)$byClass[1]
+tree.test.especificidad<- confusionMatrix(tree.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+tree.medidas <- data.frame(
+  Modelo = rep("Arbol", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(tree.train.precision, tree.test.precision),
+  Kappa = c(tree.train.kappa, tree.test.kappa),
+  Sensibilidad = c(tree.train.sensibilidad, tree.test.sensibilidad),
+  Especificidad = c(tree.train.especificidad, tree.test.especificidad),
+  Llamada = c('tree.fit','tree.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(tree.medidas,fillContainer = TRUE)
+```
+
+```{r echo=FALSE}
+# eliminamos las variables instrumentales
+rm(tree.clase.train,tree.train.precision,
+   tree.train.kappa, tree.train.sensibilidad, tree.train.especificidad)
+rm(tree.clase.test,tree.test.precision,
+   tree.test.kappa, tree.test.sensibilidad, tree.test.especificidad)
+```
+
+### 4.2.7 Bagging
+
+El bagging consiste en crear réplicas bootstrap de los datos, estimar un modelo
+para cada una de ellas y unir los resultados. En nuestro caso los modelos serán
+árboles.
+
+Requerimos unos parámetros previos, en adelante no se repetirán:
+
+```{r}
+# parametros
+maxdepth <- 5
+mfinal <- 250
+cntrl<-rpart.control(maxdepth=maxdepth, cp=-1, minsplit=5, minbucket=2)
+```
+
+Estimamos de la siguiente manera:
+
+```{r}
+# semilla de aleatoriedad
+set.seed(1998)
+# estimacion
+bag.fit<- bagging(formula=formula,
+                  data=df,
+                  subset=train,
+                  mfinal=mfinal,
+                  control=cntrl)
+```
+
+Podemos representar gráficamente la importancia de las variables:
+
+```{r echo=FALSE}
+# tabla importancia
+Importance <- data.frame(names(bag.fit$importance), bag.fit$importance,
+                         prop.table(bag.fit$importance)*100)
+
+names(Importance) <- c("variable","importance","percent")
+
+Importance$variable <- as.factor(Importance$variable)
+
+# graficos importancia
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=importance)) + 
+  labs(x="Variable",y= "Importancia") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  facet_wrap(~"Importancia de las variables en Bagging") +
+  coord_flip()
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=percent)) + 
+  labs(x="Variable",y= "Importancia (%)") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  facet_wrap(~"Importancia de las variables en Bagging") +
+  coord_flip()
+```
+
+De nuevo predecimos y estimamos la precisión:
+
+```{r echo=FALSE, include=FALSE}
+# Prediccion
+
+# train
+
+bag.clase.train <- predict(bag.fit , df[train,],type="class")$class # clase
+bag.clase.train <- as.factor(bag.clase.train)
+
+# test
+
+bag.clase.test <- predict(bag.fit , df[-train,],type="class")$class  # clase
+bag.clase.test <- as.factor(bag.clase.test)
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(bag.clase.train ,train.clase)
+
+# guardamos datos
+bag.train.precision <- confusionMatrix(bag.clase.train ,train.clase)$overall[1]
+bag.train.kappa<- confusionMatrix(bag.clase.train ,train.clase)$overall[2]
+bag.train.sensibilidad <- confusionMatrix(bag.clase.train ,train.clase)$byClass[1]
+bag.train.especificidad<- confusionMatrix(bag.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(bag.clase.test ,test.clase)
+
+# guardamos datos
+bag.test.precision <- confusionMatrix(bag.clase.test ,test.clase)$overall[1]
+bag.test.kappa<- confusionMatrix(bag.clase.test ,test.clase)$overall[2]
+bag.test.sensibilidad <- confusionMatrix(bag.clase.test ,test.clase)$byClass[1]
+bag.test.especificidad<- confusionMatrix(bag.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+bag.medidas <- data.frame(
+  Modelo = rep("Bagging", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(bag.train.precision, bag.test.precision),
+  Kappa = c(bag.train.kappa, bag.test.kappa),
+  Sensibilidad = c(bag.train.sensibilidad, bag.test.sensibilidad),
+  Especificidad = c(bag.train.especificidad, bag.test.especificidad),
+  Llamada = c('bag.fit','bag.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(bag.medidas,fillContainer = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+# eliminamos las variables instrumentales
+rm(maxdepth,mfinal,cntrl)
+rm(bag.clase.train,bag.train.precision,
+   bag.train.kappa, bag.train.sensibilidad, bag.train.especificidad)
+rm(bag.clase.test,bag.test.precision,
+   bag.test.kappa, bag.test.sensibilidad, bag.test.especificidad)
+```
+
+### 4.2.8 Boosting
+
+El boosting es similar al bagging, consiste en crear una réplica bootstrap de los
+datos y secuencialmente estimar modelos, solo que sobre los errores del primero se
+construye la siguiente réplica dándoles más importancia.
+
+```{r echo=FALSE,include=FALSE}
+# parametros
+maxdepth <- 3
+mfinal <- 250
+cntrl<-rpart.control(maxdepth=maxdepth, cp=-1, minsplit=5, minbucket=2)
+```
+
+Estimamos el modelo con la siguiente función:
+
+```{r}
+# semilla de aleatoriedad
+set.seed(1998)
+# estimacion
+boost.fit<- boosting(formula=formula, data=df, subset=train ,mfinal=mfinal, 
+                     coeflearn="Freund", boos=T, control=cntrl)
+```
+
+También podemos mostrar gráficamente la importancia de las variables:
+
+```{r echo=FALSE}
+# tabla importancia
+Importance <- data.frame(names(boost.fit$importance), boost.fit$importance,
+                         prop.table(boost.fit$importance)*100)
+
+names(Importance) <- c("variable","importance","percent")
+
+Importance$variable <- as.factor(Importance$variable)
+
+# graficos importancia
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=importance)) + 
+  labs(x="Variable",y= "Importancia") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  facet_wrap(~"Importancia de las variables en Boosting") +
+  coord_flip()
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=percent)) + 
+  labs(x="Variable",y= "Importancia (%)") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  facet_wrap(~"Importancia de las variables en Boosting") +
+  coord_flip()
+
+```
+
+De nuevo predecimos y estimamos la precisión:
+
+```{r echo=FALSE, include=FALSE}
+
+# Prediccion
+
+# train
+
+boost.clase.train <- predict(boost.fit , df[train,],type="class")$class # clase
+boost.clase.train <- as.factor(boost.clase.train)
+
+# test
+
+boost.clase.test <- predict(boost.fit , df[-train,],type="class")$class  # clase
+boost.clase.test <- as.factor(boost.clase.test)
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(boost.clase.train ,train.clase)
+
+# guardamos datos
+boost.train.precision <- confusionMatrix(boost.clase.train ,train.clase)$overall[1]
+boost.train.kappa<- confusionMatrix(boost.clase.train ,train.clase)$overall[2]
+boost.train.sensibilidad <- confusionMatrix(boost.clase.train ,train.clase)$byClass[1]
+boost.train.especificidad<- confusionMatrix(boost.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(boost.clase.test ,test.clase)
+
+# guardamos datos
+boost.test.precision <- confusionMatrix(boost.clase.test ,test.clase)$overall[1]
+boost.test.kappa<- confusionMatrix(boost.clase.test ,test.clase)$overall[2]
+boost.test.sensibilidad <- confusionMatrix(boost.clase.test ,test.clase)$byClass[1]
+boost.test.especificidad<- confusionMatrix(boost.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+boost.medidas <- data.frame(
+  Modelo = rep("Boosting", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(boost.train.precision, boost.test.precision),
+  Kappa = c(boost.train.kappa, boost.test.kappa),
+  Sensibilidad = c(boost.train.sensibilidad, boost.test.sensibilidad),
+  Especificidad = c(boost.train.especificidad, boost.test.especificidad),
+  Llamada = c('boost.fit','boost.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(boost.medidas, fillContainer = FALSE)
+```
+
+```{r echo=FALSE,include=FALSE}
+# eliminamos las variables instrumentales
+rm(maxdepth,mfinal,cntrl)
+rm(boost.clase.train,boost.train.precision,
+   boost.train.kappa, boost.train.sensibilidad, boost.train.especificidad)
+rm(boost.clase.test,boost.test.precision,
+   boost.test.kappa, boost.test.sensibilidad, boost.test.especificidad)
+```
+
+### 4.2.9 Random Forest
+
+El algoritmo de Random Forest también construye varias réplicas aleatorias de los
+datos, pero además selecciona `m` variables aleatorias para cada estimación, para
+evitar que ciertas variables acaparen todas las iteraciones eclipsando al resto.
+
+```{r echo=FALSE, include=FALSE}
+# parametros
+maxdepth <- 3
+mfinal <- 250
+cntrl<-rpart.control(maxdepth=maxdepth, cp=-1, minsplit=5, minbucket=2)
+```
+
+Tomamos `m` como la raíz del número de variables. Se estima de la siguiente forma:
+
+```{r}
+# semilla de aleatoriedad
+set.seed(1998)
+# mtry=sqr(p) para clasificacion
+forest.fit<- randomForest(formula=formula, data=df,
+                          subset=train, ntree=mfinal,
+                          mtry=round(sqrt(dim(df)[2])), nodesize=1,
+                          replace=T, importance=T)
+```
+
+De nuevo podemos estudiar la importancia de las variables, solo que en este caso
+mediante la reducción del coeficiente de Gini:
+
+```{r echo=FALSE}
+# tabla importancia
+Importance <- data.frame(names(forest.fit$importance[,4]), forest.fit$importance[,4])
+
+names(Importance) <- c("variable","importance")
+
+Importance$variable <- as.factor(Importance$variable)
+
+# graficos importancia
+
+ggplot(data=Importance, aes(x=reorder(variable,-importance), y=importance)) + 
+  labs(x="Variable",y= "Importancia") +
+  geom_bar(col="darkblue",fill="steelblue",stat="identity") +
+  facet_wrap(~"Importancia de las variables en Random Forest") +
+  coord_flip()
+
+```
+
+De nuevo, predecimos y calculamos la precisión:
+
+```{r echo=FALSE, include=FALSE}
+
+# Prediccion
+
+# train
+
+forest.clase.train <- predict(forest.fit , df[train,],type="class") # clase
+
+# test
+
+forest.clase.test <- predict(forest.fit , df[-train,],type="class")  # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(forest.clase.train ,train.clase)
+
+# guardamos datos
+forest.train.precision <- confusionMatrix(forest.clase.train ,train.clase)$overall[1]
+forest.train.kappa<- confusionMatrix(forest.clase.train ,train.clase)$overall[2]
+forest.train.sensibilidad <- confusionMatrix(forest.clase.train ,train.clase)$byClass[1]
+forest.train.especificidad<- confusionMatrix(forest.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(forest.clase.test ,test.clase)
+
+# guardamos datos
+forest.test.precision <- confusionMatrix(forest.clase.test ,test.clase)$overall[1]
+forest.test.kappa<- confusionMatrix(forest.clase.test ,test.clase)$overall[2]
+forest.test.sensibilidad <- confusionMatrix(forest.clase.test ,test.clase)$byClass[1]
+forest.test.especificidad<- confusionMatrix(forest.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+forest.medidas <- data.frame(
+  Modelo = rep("Random_Forest", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(forest.train.precision, forest.test.precision),
+  Kappa = c(forest.train.kappa, forest.test.kappa),
+  Sensibilidad = c(forest.train.sensibilidad, forest.test.sensibilidad),
+  Especificidad = c(forest.train.especificidad, forest.test.especificidad),
+  Llamada = c('forest.fit','forest.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(forest.medidas,fillContainer = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+# eliminamos las variables instrumentales
+rm(maxdepth,mfinal,cntrl)
+rm(forest.clase.train,forest.train.precision,
+   forest.train.kappa, forest.train.sensibilidad, forest.train.especificidad)
+rm(forest.clase.test,forest.test.precision,
+   forest.test.kappa, forest.test.sensibilidad, forest.test.especificidad)
+```
+
+### 4.2.10 Máquinas de Vector de Soporte (SVM)
+
+El algoritmo SVM trata de buscar el mejor hiperplano que separa los datos y para
+ello se apoya en proyectar los datos a otra dimensión, mediante funciones como
+puede ser por ejemplo, una campana gaussiana.
+
+Se estima con el siguiente código:
+
+```{r}
+# estimacion
+svm.fit<- svm(formula, data = df, subset=train,
+              type = "C-classification",
+              kernel = "radial",
+              probability =T)
+```
+
+De nuevo predecimos y estimamos la precisión:
+
+```{r echo=FALSE,include=FALSE}
+# Prediccion
+
+# train
+
+svm.clase.train <- predict(svm.fit , df[train,],type="class") # clase
+
+# test
+
+svm.clase.test <- predict(svm.fit , df[-train,],type="class") # clase
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(svm.clase.train ,train.clase)
+
+# guardamos datos
+svm.train.precision <- confusionMatrix(svm.clase.train ,train.clase)$overall[1]
+svm.train.kappa<- confusionMatrix(svm.clase.train ,train.clase)$overall[2]
+svm.train.sensibilidad <- confusionMatrix(svm.clase.train ,train.clase)$byClass[1]
+svm.train.especificidad<- confusionMatrix(svm.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(svm.clase.test ,test.clase)
+
+# guardamos datos
+svm.test.precision <- confusionMatrix(svm.clase.test ,test.clase)$overall[1]
+svm.test.kappa<- confusionMatrix(svm.clase.test ,test.clase)$overall[2]
+svm.test.sensibilidad <- confusionMatrix(svm.clase.test ,test.clase)$byClass[1]
+svm.test.especificidad<- confusionMatrix(svm.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+svm.medidas <- data.frame(
+  Modelo = rep("SVM", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(svm.train.precision, svm.test.precision),
+  Kappa = c(svm.train.kappa, svm.test.kappa),
+  Sensibilidad = c(svm.train.sensibilidad, svm.test.sensibilidad),
+  Especificidad = c(svm.train.especificidad, svm.test.especificidad),
+  Llamada = c('svm.fit','svm.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(svm.medidas,fillContainer = TRUE)
+```
+
+```{r echo=FALSE}
+# eliminamos las variables instrumentales
+rm(svm.clase.train,svm.train.precision,
+   svm.train.kappa, svm.train.sensibilidad, svm.train.especificidad)
+rm(svm.clase.test,svm.test.precision,
+   svm.test.kappa, svm.test.sensibilidad, svm.test.especificidad)
+```
+
+### 4.2.11 Clasificación mediante red neuronal.
+
+En este caso vamos a emplear una red de perceptrones con una única capa oculta.
+La red neuronal consiste en estimar mediante descenso de gradiente u otro algoritmo
+múltiples funciones lineales sobre las que  se aplica una función de transformación 
+como por ejemplo la sigmoidea (o logística) y despúes se pone en común el resultado.
+
+Estimamos a modo de ejemplo, una red muy sencilla con tantas neuronas como la ráiz 
+de cuatro veces el número de variables.
+
+```{r}
+net.fit<- nnet(formula, data=df, size = round(sqrt(4*dim(df)[2])),
+               maxit=50, decay=0.1, subset=train)
+```
+
+Redes muy sencillas podrían representarse:
+
+```{r}
+# grafico
+# plot(net.fit, cex.val=0.7, main="Red Neuronal")
+```
+
+Por último, predecimos y estimamos la precisión
+
+```{r echo=FALSE, include=FALSE}
+# Prediccion
+
+# train
+
+net.clase.train <- predict(net.fit , df[train,],type='class') # clase
+net.clase.train <- as.factor(net.clase.train)
+
+# test
+
+net.clase.test <- predict(net.fit , df[-train,],type='class') # clase
+net.clase.test <- as.factor(net.clase.test)
+
+# Precision
+
+# train
+
+# medidas
+confusionMatrix(net.clase.train ,train.clase)
+
+# guardamos datos
+net.train.precision <- confusionMatrix(net.clase.train ,train.clase)$overall[1]
+net.train.kappa<- confusionMatrix(net.clase.train ,train.clase)$overall[2]
+net.train.sensibilidad <- confusionMatrix(net.clase.train ,train.clase)$byClass[1]
+net.train.especificidad<- confusionMatrix(net.clase.train ,train.clase)$byClass[2]
+
+# test
+
+# medidas
+confusionMatrix(net.clase.test ,test.clase)
+
+# guardamos datos
+net.test.precision <- confusionMatrix(net.clase.test ,test.clase)$overall[1]
+net.test.kappa<- confusionMatrix(net.clase.test ,test.clase)$overall[2]
+net.test.sensibilidad <- confusionMatrix(net.clase.test ,test.clase)$byClass[1]
+net.test.especificidad<- confusionMatrix(net.clase.test ,test.clase)$byClass[2]
+
+# creamos tabla con las medidas de precision
+
+net.medidas <- data.frame(
+  Modelo = rep("Red Neuronal", 2),
+  Train_Test = c("Train", "Test"),
+  Precisión = c(net.train.precision, net.test.precision),
+  Kappa = c(net.train.kappa, net.test.kappa),
+  Sensibilidad = c(net.train.sensibilidad, net.test.sensibilidad),
+  Especificidad = c(net.train.especificidad, net.test.especificidad),
+  Llamada = c('net.fit','net.fit')
+)
+```
+
+```{r echo=FALSE}
+datatable(net.medidas,fillContainer = TRUE)
+```
+
+```{r echo=FALSE}
+# eliminamos las variables instrumentales
+rm(net.clase.train,net.train.precision,
+   net.train.kappa, net.train.sensibilidad, net.train.especificidad)
+rm(net.clase.test,net.test.precision,
+   net.test.kappa, net.test.sensibilidad, net.test.especificidad)
+```
+
+## 4.3 Análisis de la precisión.
+
+En este apartado vamos a comparar la precisión de los modelos y seleccionar el
+mejor.
+
+Creamos una tabla que resume la precisión de todos los modelos:
+
+```{r}
+tabla_precision <- rbind(nb.medidas,knn.medidas,log.medidas,
+                         lda.medidas,qda.medidas,tree.medidas,
+                         bag.medidas,boost.medidas,forest.medidas,
+                         svm.medidas,net.medidas)
+
+datatable(tabla_precision,fillContainer = TRUE)
+```
+
+Podemos ver la precisión en test ordenada por sensibilidad, que es la precisión
+en la clase de interés:
+
+```{r}
+# precision en test ordenada por sensibilidad
+tabla_precision %>% filter(Train_Test=='Test') %>%
+  arrange(desc(Sensibilidad)) %>% 
+  datatable(fillContainer = TRUE)
+```
+
+El modelo con mayor sensibilidad en test es:
+
+```{r}
+# modelo mayor sensibilidad en test
+tabla_precision %>%
+  filter(Train_Test=='Test') %>%
+  arrange(desc(Sensibilidad)) %>%
+  slice(1) %>% datatable(fillContainer = TRUE)
+```
+
+Más tarde volveremos a usar esta tabla para recoger el mejor modelo y predecir
+con él.
+
+```{r echo=FALSE}
+# eliminamos variables instrumentales
+rm(nb.medidas,knn.medidas,log.medidas,
+      lda.medidas,qda.medidas,tree.medidas,
+      bag.medidas,boost.medidas,forest.medidas,
+      svm.medidas,net.medidas,Importance)
+```
+
+# 5) Validación cruzada K-Folds
+
+## 5.1 Preparación previa
+
+Hacemos algunas operaciones y creamos algunos objetos necesarios:
+
+```{r}
+# numero de observaciones
+n <- dim(df)[1] 
+
+# numero de carpetas
+K <- 10
+
+# formula 
+formula <- formula(X_1~.)
+
+# fijamos semilla aleatoria
+set.seed(1998)
+
+```
+
+## 5.2 K-Folds mediante loop
+
+En este apartado vamos a realizar una validación cruzada en 10 carpetas mediante
+un loop `for`. Esto consiste en separar los datos en 10 partes, y entrenar los 
+modelos con 9 carpetas y validarlos en 1 y así sucesivamente hasta emplear las
+10 carpetas en validación, después usamos el error promedio como un estimador del
+error de test.
+
+Antes de ejecutar el loop creamos algunos objetos necesarios para su ejecución
+
+```{r}
+# reordenamos los datos
+vc = sample(1:n)	
+
+# parametros
+maxdepth <- 1
+mfinal <- 50
+cntrl<-rpart.control(maxdepth=maxdepth, cp=-1, minsplit=5, minbucket=2)
+
+# vectores de K elementos para almacenar la precision de las 10 carpetas
+error.nb.Kf = rep(0,K)        # Para Naive Bayes
+error.knn.Kf = rep(0,K)       # Para knn
+error.log.Kf = rep(0,K)       # Para logistica
+error.lda.Kf = rep(0,K)       # Para lda
+error.qda.Kf = rep(0,K)       # Para qda
+error.tree.Kf = rep(0,K)      # Para arbol
+error.bag.Kf = rep(0,K)       # Para bag
+error.boost.Kf = rep(0,K)     # Para boost
+error.forest.Kf = rep(0,K)    # Para random forest
+error.svm.Kf = rep(0,K)       # Para svm
+error.net.Kf = rep(0,K)       # Para random net
+```
+
+No vamos a mostrar el código del loop ya que es excesivamente extenso, pero lo
+ejecutamos para obtener los errores de las 10 carpetas por modelo, con los que
+construimos la siguiente tabla:
+
+```{r echo=FALSE, include=FALSE}
+for(i in 1:K){
+  
+  # los que se van a quedar fuera
+  ind = vc[((i-1)*(n/K)+1):(i*(n/K))]
+  
+  # Naive Bayes
+  nb.Kf <- naiveBayes(formula, data = df, subset = -ind)
+  error.nb.Kf[i] = 1 - sum(predict(nb.Kf, newdata = df[ind,]) == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  # kNN
+  K <- round(sqrt(dim(df[-ind,])[1])) # heuristica de mejor K
+  knn.Kf <- train.kknn(formula, data = df[-ind,], kmax = 2*K) 
+  error.knn.Kf[i] <- 1 - sum(predict(knn.Kf, newdata = df[ind,]) == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  # logistica
+  log.Kf <- train(formula, data = df[-ind,],
+                  method = "glm", family = "binomial")
+  error.log.Kf[i] = 1 - sum(predict(log.Kf, newdata = df[ind,]) == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  # LDA
+  lda.Kf <- lda(formula, df, subset = -ind)
+  error.lda.Kf[i] = 1-sum(predict(lda.Kf, 
+                                  newdata=df[ind,])$class== df[ind,"X_1"])/length(df[ind,"X_1"])
+  
+  # QDA
+  qda.Kf <- qda(formula, data=df, subset = -ind)
+  error.qda.Kf[i] = 1-sum(predict(qda.Kf, 
+                                  newdata=df[ind,])$class== df[ind,"X_1"])/length(df[ind,"X_1"])
+  
+  # Arbol
+  tree.Kf <- autoprune(formula=formula, data=df, subset=-ind)
+  error.tree.Kf[i] = 1 - sum(predict(tree.Kf, newdata = df[ind,],type="class") == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  # bagging	
+  bag.Kf <- bagging(formula=formula,
+                    data=df,
+                    subset=-ind,
+                    mfinal=mfinal,
+                    control=cntrl)
+  error.bag.Kf[i] = 1 - sum(as.factor(predict(bag.Kf,
+                                              newdata = df[ind,],type="class")$class) == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  # boosting	
+  boost.Kf <- boosting(formula=formula, data=df, subset=-ind ,mfinal=mfinal, 
+                       coeflearn="Freund", boos=T, control=cntrl)
+  error.boost.Kf[i] = 1 - sum(as.factor(predict(boost.Kf,
+                                                newdata = df[ind,],type="class")$class) == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  
+  # random forest
+  forest.Kf <- randomForest(formula=formula, data=df,
+                            subset=-ind, ntree=mfinal,
+                            mtry=round(sqrt(dim(df)[2])), nodesize=1,
+                            replace=T, importance=T)
+  error.forest.Kf[i] = 1 - sum(predict(forest.Kf,
+                                       newdata = df[ind,],type="class") == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  
+  # svm 
+  svm.Kf <- svm(formula, data = df, subset=-ind,
+                type = "C-classification",
+                kernel = "radial",
+                probability =T)
+  error.svm.Kf[i] = 1 - sum(predict(svm.Kf, newdata = df[ind,],type="class") == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+  # net
+  net.Kf <- nnet(formula, data=df, size = 3,
+                 maxit=15, decay=0.1, subset=-ind)
+  error.net.Kf[i] = 1 - sum(as.factor(predict(net.Kf, newdata = df[ind,],type="class")) == df[ind, "X_1"]) / length(df[ind, "X_1"])
+  
+}
+
+# borramos los objetos intermedios
+rm(n,vc,ind,nb.Kf,knn.Kf,log.Kf,lda.Kf,qda.Kf,
+   tree.Kf,bag.Kf,boost.Kf,forest.Kf,svm.Kf,net.Kf)
+```
+
+```{r}
+# Errores en cada una de las K carpetas
+
+# Unir los vectores en una tabla
+tabla_errores <- data.frame(
+  Naive_Bayes = error.nb.Kf,
+  knn = error.knn.Kf,
+  logistica = error.log.Kf,
+  lda = error.lda.Kf,
+  qda = error.qda.Kf,
+  arbol = error.tree.Kf,
+  bagging = error.bag.Kf,
+  boosting = error.boost.Kf,
+  random_forest = error.forest.Kf,
+  svm = error.svm.Kf,
+  net = error.net.Kf
+)
+
+datatable(tabla_errores,fillContainer = TRUE)
+```
+
+Después, creamos una tabla con los errores promedios:
+
+```{r}
+# Errores medios para cada tecnica
+tabla_errores_medios <- data.frame(
+  Modelo = c("Naive Bayes", "knn", "Logística", "lda",
+             "qda", "Arbol", "Bagging", "Boosting",
+             "Random Forest", "SVM", "Red Neuronal"),
+  Error_Medio = c(mean(error.nb.Kf), mean(error.knn.Kf),
+                  mean(error.log.Kf), mean(error.lda.Kf),
+                  mean(error.qda.Kf), mean(error.tree.Kf),
+                  mean(error.bag.Kf), mean(error.boost.Kf),
+                  mean(error.forest.Kf), mean(error.svm.Kf),
+                  mean(error.net.Kf))
+)
+
+datatable(tabla_errores_medios,fillContainer = TRUE)
+```
+
+La podemos mostrar ordenada según el error:
+
+```{r}
+# errores en orden ascendente
+tabla_errores_medios %>% arrange(Error_Medio) %>% datatable(fillContainer = TRUE)
+```
+
+Podemos representarlos en un gráfico:
+
+```{r echo=FALSE}
+# grafico
+ggplot(tabla_errores_medios, aes(x = reorder(Modelo, Error_Medio), y = Error_Medio)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  xlab("Modelo") +
+  ylab("Error Medio") +
+  ggtitle("Errores medios de los modelos") +
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept = mean(tabla_errores_medios$Error_Medio), color = "blue")+
+  theme_minimal()
+```
+
+Y además podemos buscar cual es el modelo con menor error:
+
+```{r}
+# mejor modelo
+tabla_errores_medios %>% arrange(Error_Medio) %>% slice(1) %>% pull(Modelo)
+```
+
+```{r echo=FALSE,include=FALSE}
+# limpiamos variables instrumentales
+rm(error.nb.Kf, error.knn.Kf, error.log.Kf, error.lda.Kf, error.qda.Kf, 
+   error.tree.Kf, error.bag.Kf, error.boost.Kf, error.forest.Kf, 
+   error.svm.Kf, error.net.Kf,cntrl)
+```
+
+# 6) Selección del mejor modelo y predicción
+
+Con la tabla de valores de precisión procedente de train/test podemos recoger
+el mejor modelo, para ello empleamos la columna `Llamada` y la función `get` para
+convertir ese `chr` en un objeto de modelo.
+
+```{r}
+# prediccion con el mejor modelo
+# llamada mejor modelo
+
+best.fit<-tabla_precision %>%
+  filter(Train_Test=='Test') %>%
+  arrange(desc(Sensibilidad)) %>%
+  slice(1) %>% pull(Llamada) %>% get()
+```
+
+Después podemos usarlo para predecir nuestras observaciones no definidas:
+
+```{r}
+# prediccion 
+(nd$X_1 <- predict(best.fit ,nd)$class) 
+```
+
+Pero antes vamos a ver cuales son los tres mejores modelos y sus pronósticos:
+
+```{r}
+# predicciones de los 3 mejores modelos
+top3.fit<-tabla_precision %>%
+  filter(Train_Test=='Test') %>%
+  arrange(desc(Sensibilidad)) %>%
+  slice(1:3) %>% pull(Llamada) 
+
+top3.fit
+
+# top 1
+
+predict(get(top3.fit[1]) ,nd)$class
+
+# top 2
+
+predict(get(top3.fit[2]) ,nd)
+
+# top 3
+
+predict(get(top3.fit[3]) ,nd)
+```
+
+# 7) Conclusiones.
+
+- Los procesos de preparación previa a la aplicación de machine learning son
+vitales para el rendimiento de estas. Si no se estructuran bien los datos y se
+solucionan problemas de valores ausentes, ciertos algoritmos pueden dar error.
+Pero si no se retiran outliers y no se equilibran las probabilidades a priori,
+los algoritmos pierden mucha precisión.
+
+- Elementos como la buena estructura de un proyecto, la eficiencia del código y
+la reproducibilidad son de suma importancia tanto para el desarrollo del trabajo 
+como para su reutilización en proyectos futuros.
+
+- La muestra parece recoger multitud de datos anómalos.
+
+- En caso de usar variables cualitativas, la variable tipo de trabajo 
+(fijo, temporal, etc.) parece tener gran poder explicativo, pero no podemos 
+descartar que se trate de una correlación espuria pues lo que influye en la
+solvencia no es el tipo de contrato en sí, sino el ingreso y su periodicidad que
+van ligados a dicho tipo de contrato.
+
+- Los modelos no paramétricos dan mejores resultados en nuestros datos, esto se
+debe a su mayor flexibilidad que les permite adaptarse mejor a la naturaleza del
+problema.
+
+# 8) Errores y omisiones.
+
+- Un análisis clúster más completo podría ayudar a estudiar y comprender mejor los 
+datos.
+
+- Separar en entrenamiento y test tras aplicar las probabilidades a priori no nos
+permite detectar la pérdida de generalidad que pudieran implicar, por tanto, sería
+aconsejable separar un conjunto de validación antes de aplicarlas.
+
+- Podríamos mejorar la selección de las variables para incrementar la precisión
+de los clasificadores.
+
+- Quizás una reducción de la dimensión permitiera mejorar la detección de outliers y
+la clasificación.
+
+- Hace falta probar todos los escenarios para decidir cual es el mejor método de 
+detección de outliers y para equilibrar las probabilidades a priori.
+
+- Otra cuestión interesante podría ser realizar un análisis de clasificación en
+los datos de outliers, tanto para clasificar de forma supervisada en posible 
+outlier como para clasificar dichos outliers en negativo o positivo.
